@@ -1,0 +1,381 @@
+import { useState, useMemo, useRef, useEffect } from 'react'
+import { motion, AnimatePresence } from 'motion/react'
+import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
+import toast from 'react-hot-toast'
+import { useGameStore } from '../stores/gameStore'
+import { generateQuestions } from '../utils/generateQuestions'
+
+const CHARACTERS = [
+  { type: 'wizard' as const, emoji: '🧙', companion: '🦉' },
+  { type: 'explorer' as const, emoji: '🔭', companion: '🦊' },
+  { type: 'robot' as const, emoji: '🤖', companion: '🚁' },
+]
+
+const EXAMPLE_CHIPS = [
+  {
+    label: '🌿 Photosynthese',
+    text: 'Die Photosynthese ist der Prozess, durch den Pflanzen Lichtenergie in chemische Energie umwandeln. Chlorophyll in den Chloroplasten absorbiert Sonnenlicht. CO2 und Wasser werden zu Glucose und Sauerstoff umgewandelt. Die Formel lautet: 6CO2 + 6H2O + Lichtenergie → C6H12O6 + 6O2. Licht- und Dunkelreaktionen sind die zwei Phasen.',
+  },
+  {
+    label: '⚔️ Französische Revolution',
+    text: 'Die Französische Revolution begann 1789 mit dem Sturm auf die Bastille. Ursachen waren soziale Ungleichheit, hohe Steuern und Hungersnöte. Die Erklärung der Menschen- und Bürgerrechte wurde verabschiedet. König Ludwig XVI. wurde hingerichtet. Die Revolution endete mit dem Aufstieg Napoleons und veränderte die politische Landschaft Europas grundlegend.',
+  },
+  {
+    label: '📐 Pythagoras',
+    text: 'Der Satz des Pythagoras besagt: In einem rechtwinkligen Dreieck ist die Summe der Quadrate der beiden Katheten gleich dem Quadrat der Hypotenuse (a² + b² = c²). Er wird verwendet, um Seitenlängen zu berechnen. Der Satz gilt nur für rechtwinklige Dreiecke. Pythagoras von Samos war ein griechischer Mathematiker und Philosoph.',
+  },
+  {
+    label: '🌍 Klimawandel',
+    text: 'Der Klimawandel beschreibt die langfristige Veränderung der Temperaturen und Wettermuster auf der Erde. Hauptursache ist der Treibhauseffekt durch CO2, Methan und andere Gase. Die globale Erwärmung führt zu schmelzenden Gletschern, steigendem Meeresspiegel und extremen Wetterereignissen. Gegenmaßnahmen umfassen erneuerbare Energien und Emissionsreduktion.',
+  },
+  {
+    label: '⚗️ Chemische Reaktionen',
+    text: 'Chemische Reaktionen sind Prozesse, bei denen Stoffe in neue Stoffe umgewandelt werden. Dabei werden chemische Bindungen gebrochen und neue gebildet. Wichtige Reaktionstypen sind Synthese, Analyse, Austausch und Verbrennung. Das Gesetz der Erhaltung der Masse besagt, dass die Gesamtmasse der Reaktanten gleich der Gesamtmasse der Produkte ist.',
+  },
+]
+
+const slideVariants = {
+  enter: { x: 100, opacity: 0 },
+  center: { x: 0, opacity: 1 },
+  exit: { x: -100, opacity: 0 },
+}
+
+export default function OnboardingPage() {
+  const { t } = useTranslation()
+  const navigate = useNavigate()
+  const { setPlayerName, setCharacterType, setQuestions } = useGameStore()
+
+  const nameInputRef = useRef<HTMLInputElement>(null)
+
+  const [step, setStep] = useState(1)
+
+  useEffect(() => {
+    if (step === 1) {
+      const timer = setTimeout(() => nameInputRef.current?.focus({ preventScroll: true }), 300)
+      return () => clearTimeout(timer)
+    }
+  }, [step])
+  const [name, setName] = useState('')
+  const [characterType, setLocalCharacterType] = useState<'wizard' | 'explorer' | 'robot'>('wizard')
+  const [learningText, setLearningText] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const stars = useMemo(
+    () =>
+      Array.from({ length: 60 }, (_, i) => ({
+        id: i,
+        top: `${Math.random() * 100}%`,
+        left: `${Math.random() * 100}%`,
+        size: Math.random() * 2 + 1,
+        duration: Math.random() * 4 + 2,
+        delay: Math.random() * 4,
+      })),
+    []
+  )
+
+  const canContinueStep1 = name.trim().length >= 2
+  const canSubmitStep3 = learningText.length >= 80 && !isLoading
+
+  const handleNext = () => {
+    if (step < 3) setStep(step + 1)
+  }
+
+  const handleBack = () => {
+    if (step > 1) setStep(step - 1)
+  }
+
+  const handleSubmit = async () => {
+    setIsLoading(true)
+    setError(null)
+    try {
+      const { questions, worldId } = await generateQuestions(learningText)
+      setPlayerName(name.trim())
+      setCharacterType(characterType)
+      setQuestions(questions, worldId)
+      navigate('/dungeon')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : t('errors.api_error')
+      setError(message)
+      toast.error(message)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  return (
+    <div className="relative min-h-screen bg-dark overflow-hidden flex flex-col items-center justify-center px-6">
+      {/* Stars */}
+      {stars.map((star) => (
+        <motion.div
+          key={star.id}
+          className="absolute rounded-full bg-white pointer-events-none"
+          style={{ top: star.top, left: star.left, width: star.size, height: star.size }}
+          animate={{ opacity: [0.3, 1, 0.3], scale: [0.8, 1.2, 0.8] }}
+          transition={{ duration: star.duration, delay: star.delay, repeat: Infinity, ease: 'easeInOut' }}
+        />
+      ))}
+
+      {/* Nebula */}
+      <div className="absolute inset-0 pointer-events-none">
+        <motion.div
+          className="absolute rounded-full"
+          style={{
+            top: '10%',
+            left: '15%',
+            width: 500,
+            height: 500,
+            background: 'radial-gradient(circle, rgba(108,60,225,0.15) 0%, transparent 70%)',
+          }}
+          animate={{ scale: [1, 1.1, 1], opacity: [0.5, 0.8, 0.5] }}
+          transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
+        />
+        <motion.div
+          className="absolute rounded-full"
+          style={{
+            top: '40%',
+            right: '10%',
+            width: 400,
+            height: 400,
+            background: 'radial-gradient(circle, rgba(30,100,255,0.12) 0%, transparent 70%)',
+          }}
+          animate={{ scale: [1.1, 1, 1.1], opacity: [0.4, 0.7, 0.4] }}
+          transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut' }}
+        />
+        <motion.div
+          className="absolute rounded-full"
+          style={{
+            bottom: '15%',
+            left: '30%',
+            width: 350,
+            height: 350,
+            background: 'radial-gradient(circle, rgba(0,200,150,0.10) 0%, transparent 70%)',
+          }}
+          animate={{ scale: [1, 1.15, 1], opacity: [0.3, 0.6, 0.3] }}
+          transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut' }}
+        />
+      </div>
+
+      {/* Progress Dots */}
+      <div className="absolute top-8 flex gap-3 z-20">
+        {[1, 2, 3].map((dot) => (
+          <div
+            key={dot}
+            className="w-3 h-3 rounded-full transition-all duration-300"
+            style={{
+              backgroundColor: dot === step ? '#6C3CE1' : '#0F3460',
+              boxShadow: dot === step ? '0 0 10px rgba(108,60,225,0.6)' : 'none',
+            }}
+          />
+        ))}
+      </div>
+
+      {/* Step Content */}
+      <div className="relative z-10 w-full mx-auto" style={{ maxWidth: step === 2 ? '700px' : '500px' }}>
+        <AnimatePresence mode="wait">
+          {step === 1 && (
+            <motion.div
+              key="step1"
+              variants={slideVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="flex flex-col items-center gap-6"
+            >
+              <h1 className="font-display text-white text-center" style={{ fontSize: '28px' }}>
+                {t('onboarding.step1_title')}
+              </h1>
+
+              <input
+                ref={nameInputRef}
+                type="text"
+                maxLength={20}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && canContinueStep1) handleNext()
+                }}
+                placeholder={t('onboarding.step1_placeholder')}
+                className="bg-dark-card border border-dark-border text-white rounded-xl p-4 text-lg w-full outline-none focus:border-primary transition-colors"
+              />
+
+              <motion.button
+                onClick={handleNext}
+                disabled={!canContinueStep1}
+                className="font-body font-bold text-white cursor-pointer border-none disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ fontSize: '16px', background: '#6C3CE1', padding: '14px 40px', borderRadius: '50px' }}
+                whileHover={canContinueStep1 ? { scale: 1.05 } : {}}
+                whileTap={canContinueStep1 ? { scale: 0.95 } : {}}
+              >
+                {t('onboarding.continue')}
+              </motion.button>
+            </motion.div>
+          )}
+
+          {step === 2 && (
+            <motion.div
+              key="step2"
+              variants={slideVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="flex flex-col items-center gap-6"
+            >
+              <h1 className="font-display text-white text-center" style={{ fontSize: '28px' }}>
+                {t('onboarding.step2_title')}
+              </h1>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full">
+                {CHARACTERS.map((char) => {
+                  const isSelected = characterType === char.type
+                  return (
+                    <motion.div
+                      key={char.type}
+                      onClick={() => setLocalCharacterType(char.type)}
+                      className="bg-dark-card border-2 rounded-2xl p-6 cursor-pointer flex flex-col items-center text-center"
+                      style={{
+                        borderColor: isSelected ? '#6C3CE1' : '#0F3460',
+                        boxShadow: isSelected ? '0 0 20px rgba(108,60,225,0.4)' : 'none',
+                      }}
+                      whileHover={{ y: -4, scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      transition={{ type: 'spring', damping: 20, stiffness: 200 }}
+                    >
+                      <span style={{ fontSize: '48px', lineHeight: 1 }}>{char.emoji}</span>
+                      <span className="font-display text-white mt-3" style={{ fontSize: '20px' }}>
+                        {t(`onboarding.chars.${char.type}.name`)}
+                      </span>
+                      <span className="text-gray-400 mt-1" style={{ fontSize: '14px' }}>
+                        {t(`onboarding.chars.${char.type}.desc`)}
+                      </span>
+                      <span className="text-gray-500 mt-3" style={{ fontSize: '13px' }}>
+                        Begleiter: {char.companion}
+                      </span>
+                    </motion.div>
+                  )
+                })}
+              </div>
+
+              <div className="flex gap-3">
+                <motion.button
+                  onClick={handleBack}
+                  className="font-body font-bold text-white cursor-pointer border-none"
+                  style={{ fontSize: '16px', background: 'transparent', padding: '14px 24px', borderRadius: '50px' }}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  ←
+                </motion.button>
+                <motion.button
+                  onClick={handleNext}
+                  className="font-body font-bold text-white cursor-pointer border-none"
+                  style={{ fontSize: '16px', background: '#6C3CE1', padding: '14px 40px', borderRadius: '50px' }}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  {t('onboarding.continue')}
+                </motion.button>
+              </div>
+            </motion.div>
+          )}
+
+          {step === 3 && (
+            <motion.div
+              key="step3"
+              variants={slideVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="flex flex-col items-center gap-6"
+            >
+              <h1 className="font-display text-white text-center" style={{ fontSize: '28px' }}>
+                {t('onboarding.step3_title')}
+              </h1>
+
+              <div className="w-full relative">
+                <textarea
+                  value={learningText}
+                  onChange={(e) => setLearningText(e.target.value)}
+                  placeholder={t('onboarding.step3_placeholder')}
+                  className="bg-dark-card border border-dark-border text-white rounded-xl p-4 text-base w-full outline-none focus:border-primary transition-colors"
+                  style={{ minHeight: '120px', resize: 'none' }}
+                />
+                <span
+                  className="absolute bottom-3 right-3 text-xs transition-colors"
+                  style={{ color: learningText.length >= 80 ? '#00C896' : '#6b7280' }}
+                >
+                  {learningText.length}/80
+                </span>
+              </div>
+
+              {/* Example Chips */}
+              <div className="w-full overflow-x-auto scrollbar-hide">
+                <div className="flex gap-2 pb-1" style={{ width: 'max-content' }}>
+                  {EXAMPLE_CHIPS.map((chip) => (
+                    <button
+                      key={chip.label}
+                      onClick={() => setLearningText(chip.text)}
+                      className="bg-dark-card border border-dark-border text-white rounded-full px-4 py-2 cursor-pointer whitespace-nowrap text-sm hover:border-primary transition-colors"
+                    >
+                      {chip.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {error && (
+                <p className="text-red-400 text-sm text-center">{error}</p>
+              )}
+
+              <div className="flex gap-3">
+                <motion.button
+                  onClick={handleBack}
+                  disabled={isLoading}
+                  className="font-body font-bold text-white cursor-pointer border-none disabled:opacity-40"
+                  style={{ fontSize: '16px', background: 'transparent', padding: '14px 24px', borderRadius: '50px' }}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  ←
+                </motion.button>
+                <motion.button
+                  onClick={() => void handleSubmit()}
+                  disabled={!canSubmitStep3}
+                  className="font-body font-bold text-white cursor-pointer border-none disabled:opacity-40 disabled:cursor-not-allowed relative overflow-hidden"
+                  style={{ fontSize: '16px', background: '#6C3CE1', padding: '14px 40px', borderRadius: '50px' }}
+                  whileHover={canSubmitStep3 ? { scale: 1.05 } : {}}
+                  whileTap={canSubmitStep3 ? { scale: 0.95 } : {}}
+                >
+                  {isLoading && (
+                    <motion.div
+                      className="absolute inset-0"
+                      style={{
+                        background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent)',
+                      }}
+                      animate={{ x: ['-100%', '100%'] }}
+                      transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
+                    />
+                  )}
+                  <span className="relative flex items-center gap-2">
+                    {isLoading && (
+                      <motion.span
+                        className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full"
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
+                      />
+                    )}
+                    {isLoading ? t('onboarding.creating') : t('onboarding.create_world')}
+                  </span>
+                </motion.button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </div>
+  )
+}

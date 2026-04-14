@@ -4,7 +4,6 @@ import type { Question } from '../types'
 
 interface GameState {
   playerName: string
-  characterType: 'wizard' | 'explorer' | 'robot'
   questions: Question[]
   currentWorldId: string | null
   currentQuestionIndex: number
@@ -14,21 +13,23 @@ interface GameState {
   xp: number
   streak: number
   lastPlayedDate: string | null
+  selectedWorldId: string
+  totalSessions: number
   setPlayerName: (name: string) => void
-  setCharacterType: (type: 'wizard' | 'explorer' | 'robot') => void
   setQuestions: (questions: Question[], worldId: string) => void
   answerQuestion: (correct: boolean, points?: number) => void
   nextQuestion: () => void
   resetGame: () => void
   addXP: (amount: number) => { leveledUp: boolean; newLevel: number }
   updateStreak: () => void
+  setSelectedWorldId: (id: string) => void
+  incrementSessions: () => void
 }
 
 export const useGameStore = create<GameState>()(
   persist(
     (set, get) => ({
       playerName: '',
-      characterType: 'wizard',
       questions: [],
       currentWorldId: null,
       currentQuestionIndex: 0,
@@ -38,9 +39,10 @@ export const useGameStore = create<GameState>()(
       xp: 0,
       streak: 0,
       lastPlayedDate: null,
+      selectedWorldId: 'fire',
+      totalSessions: 0,
 
       setPlayerName: (name) => set({ playerName: name }),
-      setCharacterType: (type) => set({ characterType: type }),
       setQuestions: (questions, worldId) =>
         set({ questions, currentWorldId: worldId, currentQuestionIndex: 0, playerHP: 3, score: 0 }),
 
@@ -74,16 +76,20 @@ export const useGameStore = create<GameState>()(
         const newStreak = state.lastPlayedDate === yesterday ? state.streak + 1 : 1
         set({ streak: newStreak, lastPlayedDate: today })
       },
+
+      setSelectedWorldId: (id) => set({ selectedWorldId: id }),
+      incrementSessions: () => set((state) => ({ totalSessions: state.totalSessions + 1 })),
     }),
     {
       name: 'learnquest-game',
       partialize: (state) => ({
         playerName: state.playerName,
-        characterType: state.characterType,
         level: state.level,
         xp: state.xp,
         streak: state.streak,
         lastPlayedDate: state.lastPlayedDate,
+        selectedWorldId: state.selectedWorldId,
+        totalSessions: state.totalSessions,
       }),
     }
   )

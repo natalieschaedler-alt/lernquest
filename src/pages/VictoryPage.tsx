@@ -4,41 +4,45 @@ import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import Confetti from 'react-confetti'
 import { useGameStore } from '../stores/gameStore'
+import { getWorldById } from '../data/worlds'
+import { useAuth } from '../hooks/useAuth'
+import { supabase } from '../lib/supabase'
 import { soundManager } from '../utils/soundManager'
+import type { RewardResult, RewardTier, WorldTheme } from '../types'
 
-type RewardTier = 'legendary' | 'epic' | 'rare' | 'common'
-
-function getReward(): RewardTier {
+function getRewardResult(worldTheme: WorldTheme): RewardResult {
   const roll = Math.random()
-  if (roll < 0.02) return 'legendary'
-  if (roll < 0.10) return 'epic'
-  if (roll < 0.35) return 'rare'
-  return 'common'
-}
-
-const REWARD_CONFIG: Record<RewardTier, { key: string; color: string }> = {
-  legendary: { key: 'victory.reward_legendary', color: '#FFD700' },
-  epic: { key: 'victory.reward_epic', color: '#A855F7' },
-  rare: { key: 'victory.reward_rare', color: '#3B82F6' },
-  common: { key: 'victory.reward_normal', color: '#00C896' },
+  const tier: RewardTier =
+    roll < 0.02 ? 'legendary' : roll < 0.10 ? 'epic' : roll < 0.35 ? 'rare' : 'common'
+  const xpMap: Record<RewardTier, number> = {
+    common: 50, rare: 150, epic: 300, legendary: 500,
+  }
+  const colorMap: Record<RewardTier, string> = {
+    common: '#00C896', rare: '#3B82F6', epic: '#A855F7', legendary: '#FFD700',
+  }
+  return { tier, itemName: worldTheme.loot[tier], color: colorMap[tier], xpBonus: xpMap[tier] }
 }
 
 export default function VictoryPage() {
   const navigate = useNavigate()
   const { t } = useTranslation()
+  const { user } = useAuth()
 
   const score = useGameStore((s) => s.score)
   const level = useGameStore((s) => s.level)
   const addXP = useGameStore((s) => s.addXP)
   const updateStreak = useGameStore((s) => s.updateStreak)
   const resetGame = useGameStore((s) => s.resetGame)
+  const selectedWorldId = useGameStore((s) => s.selectedWorldId)
+  const worldTheme = getWorldById(selectedWorldId)
 
   const [showConfetti, setShowConfetti] = useState(true)
   const [boxOpened, setBoxOpened] = useState(false)
+  const [isOpening, setIsOpening] = useState(false)
   const [leveledUp, setLeveledUp] = useState(false)
   const [newLevel, setNewLevel] = useState(level)
 
-  const reward = useMemo(() => getReward(), [])
+  const rewardResult = useMemo(() => getRewardResult(worldTheme), [])
   const xpGain = useMemo(() => 50 + Math.floor(score / 10), [score])
   const hasRun = useRef(false)
 
@@ -48,15 +52,36 @@ export default function VictoryPage() {
 
     soundManager.playVictory()
     updateStreak()
-    const result = addXP(xpGain)
+    const totalXP = xpGain + rewardResult.xpBonus
+    const result = addXP(totalXP)
     if (result.leveledUp) {
       setLeveledUp(true)
       setNewLevel(result.newLevel)
     }
 
+    if (user) {
+      void supabase.rpc('add_weekly_xp', { p_user_id: user.id, p_xp: totalXP })
+      void supabase.rpc('update_streak', { p_user_id: user.id })
+      void supabase.from('sessions').insert({
+        user_id: user.id,
+        world_id: null,
+        score,
+        world_theme: selectedWorldId,
+        boss_defeated: true,
+        questions_correct: Math.round(score / 10),
+        questions_total: 10,
+      })
+    }
+
     const timer = setTimeout(() => setShowConfetti(false), 5000)
     return () => clearTimeout(timer)
-  }, [updateStreak, addXP, xpGain])
+  }, [updateStreak, addXP, xpGain, rewardResult.xpBonus, user, score, selectedWorldId])
+
+  function handleOpenBox() {
+    if (isOpening || boxOpened) return
+    setIsOpening(true)
+    setTimeout(() => setBoxOpened(true), 800)
+  }
 
   const stagger = 0.15
 
@@ -123,41 +148,70 @@ export default function VictoryPage() {
         </motion.div>
       )}
 
-      {/* Reward Box */}
+      {/* Reward Chest */}
       <motion.div
-        className="mt-6 flex flex-col items-center"
+        className="mt-6 flex flex-col items-center relative"
         initial={{ y: 30, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ delay: stagger * 5 }}
       >
-        {!boxOpened ? (
-          <motion.button
-            onClick={() => setBoxOpened(true)}
-            className="cursor-pointer border-none bg-transparent"
-            style={{ fontSize: '64px', lineHeight: 1 }}
-            animate={{ rotate: [-10, 10, -10] }}
-            transition={{ duration: 0.5, repeat: Infinity, ease: 'easeInOut' }}
-            whileTap={{ scale: 0.9 }}
-          >
-            📦
-          </motion.button>
-        ) : (
+        {!isOpening && !boxOpened && (
+          <>
+            <motion.button
+              onClick={handleOpenBox}
+              className="cursor-pointer border-none bg-transparent"
+              style={{ fontSize: '64px', lineHeight: 1 }}
+              animate={{ rotate: [-8, 8, -8] }}
+              transition={{ duration: 0.6, repeat: Infinity, ease: 'easeInOut' }}
+              whileTap={{ scale: 0.9 }}
+            >
+              📦
+            </motion.button>
+            <p className="text-gray-500 text-sm mt-2">{t('victory.tap_to_open')}</p>
+          </>
+        )}
+
+        {isOpening && !boxOpened && (
+          <div className="relative flex items-center justify-center" style={{ width: 120, height: 120 }}>
+            <motion.div
+              className="absolute inset-0 rounded-full pointer-events-none"
+              style={{
+                background: `radial-gradient(circle, ${rewardResult.color} 0%, transparent 70%)`,
+              }}
+              initial={{ scale: 0, opacity: 1 }}
+              animate={{ scale: 3, opacity: 0 }}
+              transition={{ duration: 0.8, ease: 'easeOut' }}
+            />
+            <motion.span
+              style={{ fontSize: '64px', lineHeight: 1 }}
+              animate={{ scale: [1, 1.4, 0.9, 1] }}
+              transition={{ duration: 0.8, ease: 'easeInOut' }}
+            >
+              📦
+            </motion.span>
+          </div>
+        )}
+
+        {boxOpened && (
           <motion.div
             className="text-center"
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
+            initial={{ scale: 0, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
             transition={{ type: 'spring', damping: 8, stiffness: 150 }}
           >
             <p
               className="font-display"
-              style={{ fontSize: '20px', color: REWARD_CONFIG[reward].color }}
+              style={{ fontSize: '22px', color: rewardResult.color }}
             >
-              {t(REWARD_CONFIG[reward].key)}
+              {rewardResult.itemName}
+            </p>
+            <p
+              className="font-body mt-2"
+              style={{ fontSize: '16px', color: rewardResult.color }}
+            >
+              +{rewardResult.xpBonus} XP Bonus!
             </p>
           </motion.div>
-        )}
-        {!boxOpened && (
-          <p className="text-gray-500 text-sm mt-2">{t('victory.tap_to_open')}</p>
         )}
       </motion.div>
 

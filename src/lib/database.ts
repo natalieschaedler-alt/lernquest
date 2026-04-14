@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { useGameStore } from '../stores/gameStore'
 import type { World, GameSession, Character, Profile, Mistake } from '../types'
 
 // --- Worlds ---
@@ -148,6 +149,44 @@ export async function updateProfile(
     if (error) throw error
   } catch (err) {
     console.error('updateProfile:', err)
+  }
+}
+
+// --- Profile Sync & Leaderboard ---
+
+export async function syncProfileToStore(userId: string): Promise<void> {
+  try {
+    const { data } = await supabase
+      .from('profiles')
+      .select('current_streak, total_sessions, selected_world_id')
+      .eq('id', userId)
+      .maybeSingle()
+    if (!data) return
+    const store = useGameStore.getState()
+    if (data.current_streak > store.streak)
+      useGameStore.setState({ streak: data.current_streak })
+    if (data.total_sessions > store.totalSessions)
+      useGameStore.setState({ totalSessions: data.total_sessions })
+    if (data.selected_world_id)
+      useGameStore.setState({ selectedWorldId: data.selected_world_id })
+  } catch (err) {
+    console.warn('syncProfileToStore:', err)
+  }
+}
+
+export async function getWeeklyLeaderboard(limit = 50): Promise<Array<{
+  id: string; name: string | null; weekly_xp: number; selected_world_id: string | null
+}>> {
+  try {
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, name, weekly_xp, selected_world_id')
+      .order('weekly_xp', { ascending: false })
+      .limit(limit)
+    return (data ?? []) as Array<{ id: string; name: string | null; weekly_xp: number; selected_world_id: string | null }>
+  } catch (err) {
+    console.error('getWeeklyLeaderboard:', err)
+    return []
   }
 }
 

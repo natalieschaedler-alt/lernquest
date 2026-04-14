@@ -11,6 +11,7 @@ const BossPage = lazy(() => import('./pages/BossPage'))
 const VictoryPage = lazy(() => import('./pages/VictoryPage'))
 const GameOverPage = lazy(() => import('./pages/GameOverPage'))
 const ProfilePage = lazy(() => import('./pages/ProfilePage'))
+const LeaguePage = lazy(() => import('./pages/LeaguePage'))
 const AuthPage = lazy(() => import('./pages/AuthPage'))
 const OfflinePage = lazy(() => import('./pages/OfflinePage'))
 const ImpressumPage = lazy(() => import('./pages/ImpressumPage'))
@@ -29,6 +30,7 @@ export default function App() {
         <Route path="/victory" element={<VictoryPage />} />
         <Route path="/gameover" element={<GameOverPage />} />
         <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/league" element={<LeaguePage />} />
         <Route path="/auth" element={<AuthPage />} />
         <Route path="/offline" element={<OfflinePage />} />
         <Route path="/impressum" element={<ImpressumPage />} />

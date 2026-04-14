@@ -1,8 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { useTranslation } from 'react-i18next'
-import { useGameStore } from '../stores/gameStore'
-import type { Question } from '../types'
+import type { Question, WorldTheme } from '../types'
 
 // ── Constants ──
 const TIMER_DURATION = 20
@@ -14,26 +13,26 @@ const VICTORY_DELAY = 2000
 const DEFEAT_DELAY = 1500
 const FOG_DURATION = 3000
 const SPECIAL_OVERLAY_DURATION = 1500
+const SHUFFLE_ANIM_DURATION = 600
 const SHAKE_KEYFRAMES = [0, -8, 8, -8, 8, 0]
 
-const HUETERS = {
-  wizard: { emoji: '🧙‍♂️', name: 'Der Weise Magier', color: '#6C3CE1' },
-  explorer: { emoji: '🌊', name: 'Der Tiefsee-Geist', color: '#00C896' },
-  robot: { emoji: '⭐', name: 'Das Sternen-Orakel', color: '#FF6B35' },
-} as const
-
-type SpecialAttack = 'time' | 'fog' | null
+type SpecialAttack = 'time' | 'fog' | 'shuffle' | null
 
 interface HueterBossProps {
   questions: Question[]
   onVictory: (score: number) => void
   onDefeat: () => void
+  worldTheme?: WorldTheme
 }
 
-export default function HueterBoss({ questions, onVictory, onDefeat }: HueterBossProps) {
+export default function HueterBoss(props: HueterBossProps) {
+  const { questions, onVictory, onDefeat } = props
   const { t } = useTranslation()
-  const characterType = useGameStore((s) => s.characterType)
-  const hueter = HUETERS[characterType]
+
+  const bossEmoji = props.worldTheme?.bossEmoji ?? '🧙‍♂️'
+  const bossName  = props.worldTheme?.bossName  ?? 'Der Weise Hüter'
+  const bossColor = props.worldTheme?.primaryColor ?? '#6C3CE1'
+  const availableAttacks = props.worldTheme?.specialAttacks ?? []
 
   const [phase, setPhase] = useState<'intro' | 'fight' | 'victory' | 'defeat'>('intro')
   const [questionIdx, setQuestionIdx] = useState(0)
@@ -47,6 +46,7 @@ export default function HueterBoss({ questions, onVictory, onDefeat }: HueterBos
   const [specialAttack, setSpecialAttack] = useState<SpecialAttack>(null)
   const [showSpecialOverlay, setShowSpecialOverlay] = useState(false)
   const [fogActive, setFogActive] = useState(false)
+  const [shuffleActive, setShuffleActive] = useState(false)
   const [correctStreak, setCorrectStreak] = useState(0)
   const [shakePlayer, setShakePlayer] = useState(false)
   const [shakeHueter, setShakeHueter] = useState(false)
@@ -98,16 +98,21 @@ export default function HueterBoss({ questions, onVictory, onDefeat }: HueterBos
   }, [fogActive])
 
   const triggerSpecialAttack = useCallback(() => {
-    const attack: SpecialAttack = Math.random() > 0.5 ? 'time' : 'fog'
+    if (availableAttacks.length === 0) return
+    const attack = availableAttacks[
+      Math.floor(Math.random() * availableAttacks.length)
+    ] as SpecialAttack
     setSpecialAttack(attack)
     setShowSpecialOverlay(true)
 
-    if (attack === 'fog') {
-      setFogActive(true)
+    if (attack === 'fog') setFogActive(true)
+    if (attack === 'shuffle') {
+      setShuffleActive(true)
+      setTimeout(() => setShuffleActive(false), SHUFFLE_ANIM_DURATION)
     }
 
     setTimeout(() => setShowSpecialOverlay(false), SPECIAL_OVERLAY_DURATION)
-  }, [])
+  }, [availableAttacks])
 
   const handleAnswer = useCallback(
     (answerIndex: number) => {
@@ -134,7 +139,11 @@ export default function HueterBoss({ questions, onVictory, onDefeat }: HueterBos
         setTimeout(() => setShakeHueter(false), 500)
 
         // Trigger special after 2nd correct answer (once per fight)
-        if (newStreak === 2 && !specialTriggeredRef.current) {
+        if (
+          newStreak === 2 &&
+          !specialTriggeredRef.current &&
+          availableAttacks.length > 0
+        ) {
           specialTriggeredRef.current = true
           setTimeout(() => triggerSpecialAttack(), 800)
         }
@@ -169,7 +178,7 @@ export default function HueterBoss({ questions, onVictory, onDefeat }: HueterBos
         setSpecialAttack(null)
       }, 1200)
     },
-    [currentQuestion, correctStreak, bossHP, shields, triggerSpecialAttack],
+    [currentQuestion, correctStreak, bossHP, shields, triggerSpecialAttack, availableAttacks.length],
   )
 
   // ── Victory/Defeat callbacks ──
@@ -211,7 +220,7 @@ export default function HueterBoss({ questions, onVictory, onDefeat }: HueterBos
             animate={{ scale: [0, 1.2, 1] }}
             transition={{ duration: 0.8, ease: 'easeOut' }}
           >
-            {hueter.emoji}
+            {bossEmoji}
           </motion.span>
 
           <motion.p
@@ -225,12 +234,12 @@ export default function HueterBoss({ questions, onVictory, onDefeat }: HueterBos
 
           <motion.p
             className="font-body text-sm mt-2"
-            style={{ color: hueter.color }}
+            style={{ color: bossColor }}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 1 }}
           >
-            {hueter.name}
+            {bossName}
           </motion.p>
         </motion.div>
       </motion.div>
@@ -265,7 +274,7 @@ export default function HueterBoss({ questions, onVictory, onDefeat }: HueterBos
           animate={{ scale: 0, rotate: 720 }}
           transition={{ duration: 1, ease: 'easeIn' }}
         >
-          {hueter.emoji}
+          {bossEmoji}
         </motion.span>
 
         <motion.p
@@ -299,6 +308,15 @@ export default function HueterBoss({ questions, onVictory, onDefeat }: HueterBos
       </motion.div>
     )
   }
+
+  const specialOverlayText =
+    specialAttack === 'time'
+      ? t('boss.special_time')
+      : specialAttack === 'fog'
+        ? t('boss.special_fog')
+        : specialAttack === 'shuffle'
+          ? '🎲 Chaos! Alles durchgemischt!'
+          : ''
 
   // ── Fight phase ──
   return (
@@ -340,12 +358,12 @@ export default function HueterBoss({ questions, onVictory, onDefeat }: HueterBos
               ? { duration: 0.4 }
               : { duration: 2.5, repeat: Infinity, ease: 'easeInOut' }
           }
-          style={{ filter: `drop-shadow(0 0 20px ${hueter.color})` }}
+          style={{ filter: `drop-shadow(0 0 20px ${bossColor})` }}
         >
-          {hueter.emoji}
+          {bossEmoji}
         </motion.span>
-        <p className="font-display text-sm mt-1" style={{ color: hueter.color }}>
-          {hueter.name}
+        <p className="font-display text-sm mt-1" style={{ color: bossColor }}>
+          {bossName}
         </p>
       </div>
 
@@ -422,6 +440,12 @@ export default function HueterBoss({ questions, onVictory, onDefeat }: HueterBos
                 style={{ borderColor }}
                 whileHover={!answered ? { scale: 1.03, borderColor: '#6C3CE1' } : undefined}
                 whileTap={!answered ? { scale: 0.97 } : undefined}
+                animate={
+                  shuffleActive
+                    ? { x: [0, 4, -4, 4, 0], rotate: [0, 2, -2, 0] }
+                    : undefined
+                }
+                transition={shuffleActive ? { duration: 0.4 } : undefined}
                 onClick={() => handleAnswer(i)}
                 disabled={answered}
               >
@@ -478,9 +502,7 @@ export default function HueterBoss({ questions, onVictory, onDefeat }: HueterBos
               transition={{ duration: 0.5, ease: 'easeOut' }}
             >
               <p className="font-display text-2xl text-white drop-shadow-lg">
-                {specialAttack === 'time'
-                  ? t('boss.special_time')
-                  : t('boss.special_fog')}
+                {specialOverlayText}
               </p>
             </motion.div>
           </motion.div>

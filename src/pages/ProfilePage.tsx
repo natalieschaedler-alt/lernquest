@@ -2,13 +2,9 @@ import { motion } from 'motion/react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useGameStore } from '../stores/gameStore'
+import { useLeague } from '../hooks/useLeague'
+import { getWorldById } from '../data/worlds'
 import { soundManager } from '../utils/soundManager'
-
-const CHARACTER_CONFIG = {
-  wizard: { emoji: '🧙‍♂️', color: '#6C3CE1' },
-  explorer: { emoji: '🧭', color: '#00C896' },
-  robot: { emoji: '🤖', color: '#FF6B35' },
-} as const
 
 const XP_THRESHOLDS = [0, 100, 250, 500, 900, 1400, 2000, 2700, 3500, 4500, 6000]
 
@@ -35,12 +31,14 @@ export default function ProfilePage() {
   const { t } = useTranslation()
 
   const playerName = useGameStore((s) => s.playerName)
-  const characterType = useGameStore((s) => s.characterType)
+  const selectedWorldId = useGameStore((s) => s.selectedWorldId)
   const level = useGameStore((s) => s.level)
   const xp = useGameStore((s) => s.xp)
   const streak = useGameStore((s) => s.streak)
 
-  const char = CHARACTER_CONFIG[characterType]
+  const { userTier, userWeeklyXP } = useLeague()
+
+  const worldTheme = getWorldById(selectedWorldId)
   const { current, needed, percent } = getLevelProgress(xp, level)
 
   return (
@@ -69,9 +67,9 @@ export default function ProfilePage() {
           className="text-7xl mb-3"
           animate={{ y: [0, -8, 0] }}
           transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-          style={{ filter: `drop-shadow(0 0 20px ${char.color})` }}
+          style={{ filter: `drop-shadow(0 0 20px ${worldTheme.primaryColor})` }}
         >
-          {char.emoji}
+          {worldTheme.emoji}
         </motion.div>
 
         <h2 className="font-display text-2xl text-white">
@@ -81,9 +79,9 @@ export default function ProfilePage() {
         <div className="flex items-center gap-2 mt-1">
           <span
             className="font-body text-xs px-3 py-1 rounded-full font-semibold"
-            style={{ background: char.color + '30', color: char.color }}
+            style={{ background: worldTheme.primaryColor + '30', color: worldTheme.primaryColor }}
           >
-            {t(`onboarding.chars.${characterType}.name`)}
+            {worldTheme.name}
           </span>
           <span className="font-body text-xs text-gray-400">
             {t('profile.level', { level })}
@@ -99,7 +97,7 @@ export default function ProfilePage() {
           <div className="w-full rounded-full h-3" style={{ background: '#1A1A2E' }}>
             <motion.div
               className="h-3 rounded-full"
-              style={{ background: `linear-gradient(90deg, ${char.color}, ${char.color}cc)` }}
+              style={{ background: `linear-gradient(90deg, ${worldTheme.primaryColor}, ${worldTheme.primaryColor}cc)` }}
               initial={{ width: 0 }}
               animate={{ width: `${percent}%` }}
               transition={{ duration: 1, ease: 'easeOut', delay: 0.3 }}
@@ -176,6 +174,36 @@ export default function ProfilePage() {
           <p className="font-body text-xs text-gray-400 mt-0.5">{t('profile.sound_desc')}</p>
         </div>
         <SoundToggleSwitch />
+      </motion.div>
+
+      {/* Liga Card */}
+      <motion.div
+        className="mt-5 bg-dark-card rounded-2xl p-4 flex items-center gap-3"
+        style={{ border: `2px solid ${userTier.color}` }}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.35 }}
+      >
+        <span className="text-4xl" style={{ filter: `drop-shadow(0 0 12px ${userTier.color})` }}>
+          {userTier.emoji}
+        </span>
+        <div className="flex-1 min-w-0">
+          <p className="font-display text-lg" style={{ color: userTier.color }}>
+            {userTier.label}
+          </p>
+          <p className="font-body text-xs text-gray-400">
+            <span className="font-bold text-white tabular-nums">{userWeeklyXP}</span> XP diese Woche
+          </p>
+        </div>
+        <motion.button
+          onClick={() => navigate('/league')}
+          className="font-body font-semibold text-white rounded-xl px-4 py-2 cursor-pointer border-none text-sm"
+          style={{ background: userTier.color + '33', color: userTier.color }}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+        >
+          Zur Liga →
+        </motion.button>
       </motion.div>
 
       {/* New Adventure Button */}

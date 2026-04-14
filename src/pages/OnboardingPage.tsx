@@ -5,12 +5,7 @@ import { useTranslation } from 'react-i18next'
 import toast from 'react-hot-toast'
 import { useGameStore } from '../stores/gameStore'
 import { generateQuestions } from '../utils/generateQuestions'
-
-const CHARACTERS = [
-  { type: 'wizard' as const, emoji: '🧙', companion: '🦉' },
-  { type: 'explorer' as const, emoji: '🔭', companion: '🦊' },
-  { type: 'robot' as const, emoji: '🤖', companion: '🚁' },
-]
+import { getAvailableWorlds, getLockedWorlds } from '../data/worlds'
 
 const EXAMPLE_CHIPS = [
   {
@@ -44,7 +39,8 @@ const slideVariants = {
 export default function OnboardingPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const { setPlayerName, setCharacterType, setQuestions } = useGameStore()
+  const { setPlayerName, setQuestions, setSelectedWorldId } = useGameStore()
+  const totalSessions = useGameStore((s) => s.totalSessions)
 
   const nameInputRef = useRef<HTMLInputElement>(null)
 
@@ -57,8 +53,8 @@ export default function OnboardingPage() {
     }
   }, [step])
   const [name, setName] = useState('')
-  const [characterType, setLocalCharacterType] = useState<'wizard' | 'explorer' | 'robot'>('wizard')
   const [learningText, setLearningText] = useState('')
+  const [selectedWorldId, setLocalWorldId] = useState('fire')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -76,7 +72,7 @@ export default function OnboardingPage() {
   )
 
   const canContinueStep1 = name.trim().length >= 2
-  const canSubmitStep3 = learningText.length >= 80 && !isLoading
+  const canSubmitStep2 = learningText.length >= 80 && !isLoading
 
   const handleNext = () => {
     if (step < 3) setStep(step + 1)
@@ -92,8 +88,8 @@ export default function OnboardingPage() {
     try {
       const { questions, worldId } = await generateQuestions(learningText)
       setPlayerName(name.trim())
-      setCharacterType(characterType)
       setQuestions(questions, worldId)
+      setSelectedWorldId(selectedWorldId)
       navigate('/dungeon')
     } catch (err) {
       const message = err instanceof Error ? err.message : t('errors.api_error')
@@ -172,7 +168,7 @@ export default function OnboardingPage() {
       </div>
 
       {/* Step Content */}
-      <div className="relative z-10 w-full mx-auto" style={{ maxWidth: step === 2 ? '700px' : '500px' }}>
+      <div className="relative z-10 w-full mx-auto" style={{ maxWidth: '500px' }}>
         <AnimatePresence mode="wait">
           {step === 1 && (
             <motion.div
@@ -217,74 +213,6 @@ export default function OnboardingPage() {
           {step === 2 && (
             <motion.div
               key="step2"
-              variants={slideVariants}
-              initial="enter"
-              animate="center"
-              exit="exit"
-              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="flex flex-col items-center gap-6"
-            >
-              <h1 className="font-display text-white text-center" style={{ fontSize: '28px' }}>
-                {t('onboarding.step2_title')}
-              </h1>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full">
-                {CHARACTERS.map((char) => {
-                  const isSelected = characterType === char.type
-                  return (
-                    <motion.div
-                      key={char.type}
-                      onClick={() => setLocalCharacterType(char.type)}
-                      className="bg-dark-card border-2 rounded-2xl p-6 cursor-pointer flex flex-col items-center text-center"
-                      style={{
-                        borderColor: isSelected ? '#6C3CE1' : '#0F3460',
-                        boxShadow: isSelected ? '0 0 20px rgba(108,60,225,0.4)' : 'none',
-                      }}
-                      whileHover={{ y: -4, scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      transition={{ type: 'spring', damping: 20, stiffness: 200 }}
-                    >
-                      <span style={{ fontSize: '48px', lineHeight: 1 }}>{char.emoji}</span>
-                      <span className="font-display text-white mt-3" style={{ fontSize: '20px' }}>
-                        {t(`onboarding.chars.${char.type}.name`)}
-                      </span>
-                      <span className="text-gray-400 mt-1" style={{ fontSize: '14px' }}>
-                        {t(`onboarding.chars.${char.type}.desc`)}
-                      </span>
-                      <span className="text-gray-500 mt-3" style={{ fontSize: '13px' }}>
-                        Begleiter: {char.companion}
-                      </span>
-                    </motion.div>
-                  )
-                })}
-              </div>
-
-              <div className="flex gap-3">
-                <motion.button
-                  onClick={handleBack}
-                  className="font-body font-bold text-white cursor-pointer border-none"
-                  style={{ fontSize: '16px', background: 'transparent', padding: '14px 24px', borderRadius: '50px' }}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  ←
-                </motion.button>
-                <motion.button
-                  onClick={handleNext}
-                  className="font-body font-bold text-white cursor-pointer border-none"
-                  style={{ fontSize: '16px', background: '#6C3CE1', padding: '14px 40px', borderRadius: '50px' }}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  {t('onboarding.continue')}
-                </motion.button>
-              </div>
-            </motion.div>
-          )}
-
-          {step === 3 && (
-            <motion.div
-              key="step3"
               variants={slideVariants}
               initial="enter"
               animate="center"
@@ -343,12 +271,113 @@ export default function OnboardingPage() {
                   ←
                 </motion.button>
                 <motion.button
+                  onClick={handleNext}
+                  disabled={!canSubmitStep2}
+                  className="font-body font-bold text-white cursor-pointer border-none disabled:opacity-40 disabled:cursor-not-allowed"
+                  style={{ fontSize: '16px', background: '#6C3CE1', padding: '14px 40px', borderRadius: '50px' }}
+                  whileHover={canSubmitStep2 ? { scale: 1.05 } : {}}
+                  whileTap={canSubmitStep2 ? { scale: 0.95 } : {}}
+                >
+                  {t('onboarding.continue')}
+                </motion.button>
+              </div>
+            </motion.div>
+          )}
+
+          {step === 3 && (
+            <motion.div
+              key="step3"
+              variants={slideVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="flex flex-col items-center gap-6"
+            >
+              <h1 className="font-display text-white text-center" style={{ fontSize: '28px' }}>
+                Wähle deine Welt
+              </h1>
+
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 w-full">
+                {[...getAvailableWorlds(totalSessions), ...getLockedWorlds(totalSessions)].map((world) => {
+                  const isUnlocked = world.unlockedAtSessions <= totalSessions
+                  const isSelected = selectedWorldId === world.id
+                  const sessionsRemaining = world.unlockedAtSessions - totalSessions
+
+                  if (isUnlocked) {
+                    return (
+                      <motion.div
+                        key={world.id}
+                        onClick={() => setLocalWorldId(world.id)}
+                        className="rounded-2xl p-4 cursor-pointer flex flex-col items-center text-center"
+                        style={{
+                          backgroundColor: `${world.primaryColor}26`,
+                          border: isSelected ? `2px solid ${world.primaryColor}` : '1px solid #0F3460',
+                          boxShadow: isSelected ? `0 0 20px ${world.primaryColor}40` : 'none',
+                        }}
+                        whileHover={{ y: -4, scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        transition={{ type: 'spring', damping: 20, stiffness: 200 }}
+                      >
+                        <span style={{ fontSize: '40px', lineHeight: 1 }}>{world.emoji}</span>
+                        <span className="font-display text-white mt-2" style={{ fontSize: '16px' }}>
+                          {world.name}
+                        </span>
+                        {world.unlockedAtSessions > 0 && (
+                          <span className="text-gray-500 mt-1" style={{ fontSize: '11px' }}>
+                            Freischalten ab {world.unlockedAtSessions} Sessions
+                          </span>
+                        )}
+                      </motion.div>
+                    )
+                  }
+
+                  return (
+                    <div
+                      key={world.id}
+                      onClick={() =>
+                        toast.error(`Noch ${sessionsRemaining} Sessions bis ${world.name}`)
+                      }
+                      className="rounded-2xl p-4 flex flex-col items-center text-center"
+                      style={{
+                        backgroundColor: '#0F1A30',
+                        border: '1px solid #0F3460',
+                        opacity: 0.4,
+                        cursor: 'not-allowed',
+                      }}
+                    >
+                      <span style={{ fontSize: '40px', lineHeight: 1 }}>🔒</span>
+                      <span className="font-display text-white mt-2" style={{ fontSize: '16px' }}>
+                        {world.name}
+                      </span>
+                      <span className="text-gray-500 mt-1" style={{ fontSize: '11px' }}>
+                        Noch {sessionsRemaining} Sessions
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {error && <p className="text-red-400 text-sm text-center">{error}</p>}
+
+              <div className="flex gap-3">
+                <motion.button
+                  onClick={handleBack}
+                  disabled={isLoading}
+                  className="font-body font-bold text-white cursor-pointer border-none disabled:opacity-40"
+                  style={{ fontSize: '16px', background: 'transparent', padding: '14px 24px', borderRadius: '50px' }}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  ←
+                </motion.button>
+                <motion.button
                   onClick={() => void handleSubmit()}
-                  disabled={!canSubmitStep3}
+                  disabled={isLoading}
                   className="font-body font-bold text-white cursor-pointer border-none disabled:opacity-40 disabled:cursor-not-allowed relative overflow-hidden"
                   style={{ fontSize: '16px', background: '#6C3CE1', padding: '14px 40px', borderRadius: '50px' }}
-                  whileHover={canSubmitStep3 ? { scale: 1.05 } : {}}
-                  whileTap={canSubmitStep3 ? { scale: 0.95 } : {}}
+                  whileHover={!isLoading ? { scale: 1.05 } : {}}
+                  whileTap={!isLoading ? { scale: 0.95 } : {}}
                 >
                   {isLoading && (
                     <motion.div
@@ -368,7 +397,7 @@ export default function OnboardingPage() {
                         transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
                       />
                     )}
-                    {isLoading ? t('onboarding.creating') : t('onboarding.create_world')}
+                    {isLoading ? t('onboarding.creating') : 'Abenteuer starten! ✨'}
                   </span>
                 </motion.button>
               </div>

@@ -21,6 +21,7 @@ Thumbs.db
 .vscode/
 .idea/
 *.sw?
+.claude/
 
 # TypeScript cache
 *.tsbuildinfo
@@ -30,3 +31,8 @@ coverage/
 
 # Vercel
 .vercel/
+.vercel
+
+# Local artifacts
+*.zip
+*.pf

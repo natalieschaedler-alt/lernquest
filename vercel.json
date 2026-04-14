@@ -21,10 +21,5 @@
         { "key": "Access-Control-Allow-Headers", "value": "Content-Type" }
       ]
     }
-  ],
-  "functions": {
-    "api/*.ts": {
-      "runtime": "nodejs20.x"
-    }
-  }
+  ]
 }

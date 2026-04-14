@@ -97,8 +97,11 @@ export async function generateQuestions(text: string): Promise<{ questions: Ques
     throw new Error(`API Fehler: ${error.error ?? 'Unbekannter Fehler'}`)
   }
 
-  // 5. JSON parsen – neues Schema: { data: GeneratedQuestionsResponse }
-  const responseData = (await response.json() as { data: GeneratedQuestionsResponse }).data
+  // 5. JSON parsen – neues Schema: { error, data: GeneratedQuestionsResponse | null }
+  const responseData = (await response.json() as { data: GeneratedQuestionsResponse | null }).data
+  if (!responseData || !responseData.multiple_choice) {
+    throw new Error(`KI-Antwort ungültig: ${JSON.stringify(responseData)}`)
+  }
   const questions = convertToQuestions(responseData)
   if (questions.length === 0) {
     throw new Error('Fehler beim Verarbeiten der KI-Antwort. Bitte versuche es nochmal.')

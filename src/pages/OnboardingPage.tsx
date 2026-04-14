@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from 'react'
+import { useState, useMemo, useRef, useEffect, type ChangeEvent } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
@@ -36,6 +36,34 @@ const slideVariants = {
   exit: { x: -100, opacity: 0 },
 }
 
+type PdfPage = { getTextContent: () => Promise<{ items: Array<{ str: string }> }> }
+type PdfDoc = { numPages: number; getPage: (n: number) => Promise<PdfPage> }
+type PdfJsLib = {
+  GlobalWorkerOptions: { workerSrc: string }
+  getDocument: (opts: { data: ArrayBuffer }) => { promise: Promise<PdfDoc> }
+}
+
+function loadPdfJs(): Promise<PdfJsLib> {
+  const w = window as unknown as { pdfjsLib?: PdfJsLib }
+  if (w.pdfjsLib) return Promise.resolve(w.pdfjsLib)
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script')
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'
+    script.onload = () => {
+      const lib = (window as unknown as { pdfjsLib?: PdfJsLib }).pdfjsLib
+      if (!lib) {
+        reject(new Error('pdfjsLib nicht verfügbar'))
+        return
+      }
+      lib.GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
+      resolve(lib)
+    }
+    script.onerror = () => reject(new Error('pdf.js konnte nicht geladen werden'))
+    document.head.appendChild(script)
+  })
+}
+
 export default function OnboardingPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -43,6 +71,7 @@ export default function OnboardingPage() {
   const totalSessions = useGameStore((s) => s.totalSessions)
 
   const nameInputRef = useRef<HTMLInputElement>(null)
+  const pdfInputRef = useRef<HTMLInputElement>(null)
 
   const [step, setStep] = useState(1)
 
@@ -57,6 +86,8 @@ export default function OnboardingPage() {
   const [selectedWorldId, setLocalWorldId] = useState('fire')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [pdfLoading, setPdfLoading] = useState(false)
+  const [pdfStatus, setPdfStatus] = useState<{ ok: boolean; message: string } | null>(null)
 
   const stars = useMemo(
     () =>
@@ -80,6 +111,31 @@ export default function OnboardingPage() {
 
   const handleBack = () => {
     if (step > 1) setStep(step - 1)
+  }
+
+  const handlePdfUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setPdfLoading(true)
+    setPdfStatus(null)
+    try {
+      const pdfjsLib = await loadPdfJs()
+      const buffer = await file.arrayBuffer()
+      const pdf = await pdfjsLib.getDocument({ data: buffer }).promise
+      let text = ''
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i)
+        const content = await page.getTextContent()
+        text += content.items.map((item) => item.str).join(' ') + '\n'
+      }
+      setLearningText(text.trim())
+      setPdfStatus({ ok: true, message: `✓ ${file.name} geladen (${pdf.numPages} Seiten)` })
+    } catch {
+      setPdfStatus({ ok: false, message: 'PDF konnte nicht gelesen werden' })
+    } finally {
+      setPdfLoading(false)
+      if (pdfInputRef.current) pdfInputRef.current.value = ''
+    }
   }
 
   const handleSubmit = async () => {
@@ -223,6 +279,28 @@ export default function OnboardingPage() {
               <h1 className="font-display text-white text-center" style={{ fontSize: '28px' }}>
                 {t('onboarding.step3_title')}
               </h1>
+
+              <div className="w-full flex flex-col items-start gap-2">
+                <button
+                  onClick={() => pdfInputRef.current?.click()}
+                  disabled={pdfLoading}
+                  className="bg-dark-card border border-dark-border text-white rounded-full px-4 py-2 cursor-pointer whitespace-nowrap text-sm hover:border-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {pdfLoading ? '⏳ Wird gelesen...' : '📄 PDF hochladen'}
+                </button>
+                <input
+                  ref={pdfInputRef}
+                  type="file"
+                  accept=".pdf"
+                  onChange={(e) => void handlePdfUpload(e)}
+                  style={{ display: 'none' }}
+                />
+                {pdfStatus && (
+                  <span className="text-xs" style={{ color: pdfStatus.ok ? '#00C896' : '#F87171' }}>
+                    {pdfStatus.message}
+                  </span>
+                )}
+              </div>
 
               <div className="w-full relative">
                 <textarea

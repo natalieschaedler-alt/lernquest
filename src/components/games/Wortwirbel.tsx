@@ -73,12 +73,11 @@ export default function Wortwirbel({ question, onAnswer }: WortswirbelProps) {
     ]
     const shuffledPositions = shuffleArray(gridPositions)
 
-    const answerBubbles: Bubble[] = question.answers.map((text, i) => ({
+    const answerBubbles: Omit<Bubble, 'color'>[] = question.answers.map((text, i) => ({
       id: i,
       text,
       type: 'answer' as const,
       answerIndex: i,
-      color: BUBBLE_COLORS[i % BUBBLE_COLORS.length],
       x: shuffledPositions[i].x + randomBetween(-5, 5),
       y: shuffledPositions[i].y + randomBetween(-5, 5),
       floatDuration: randomBetween(FLOAT_DURATION_MIN, FLOAT_DURATION_MAX),
@@ -86,12 +85,11 @@ export default function Wortwirbel({ question, onAnswer }: WortswirbelProps) {
       floatOffsetY: randomBetween(-15, 15),
     }))
 
-    const fakeBubbles: Bubble[] = FAKE_LABELS.map((text, i) => ({
+    const fakeBubbles: Omit<Bubble, 'color'>[] = FAKE_LABELS.map((text, i) => ({
       id: question.answers.length + i,
       text,
       type: 'fake' as const,
       answerIndex: null,
-      color: BUBBLE_COLORS[(question.answers.length + i) % BUBBLE_COLORS.length],
       x: shuffledPositions[question.answers.length + i].x + randomBetween(-5, 5),
       y: shuffledPositions[question.answers.length + i].y + randomBetween(-5, 5),
       floatDuration: randomBetween(FLOAT_DURATION_MIN, FLOAT_DURATION_MAX),
@@ -99,7 +97,9 @@ export default function Wortwirbel({ question, onAnswer }: WortswirbelProps) {
       floatOffsetY: randomBetween(-15, 15),
     }))
 
-    return shuffleArray([...answerBubbles, ...fakeBubbles])
+    const shuffled = shuffleArray<Omit<Bubble, 'color'>>([...answerBubbles, ...fakeBubbles])
+    const shuffledColors = shuffleArray(BUBBLE_COLORS)
+    return shuffled.map((b, i) => ({ ...b, color: shuffledColors[i % BUBBLE_COLORS.length] }))
   }, [question])
 
   // Timer

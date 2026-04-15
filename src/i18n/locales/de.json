@@ -11,35 +11,57 @@
   "onboarding": {
     "step1_title": "Wie heißt du, Abenteurer?",
     "step1_placeholder": "Dein Name...",
-    "step2_title": "Wähle deinen Gefährten",
     "step3_title": "Was möchtest du heute meistern?",
     "step3_placeholder": "Füge hier deinen Lernstoff ein...",
     "step3_hint": "Mindestens 80 Zeichen für beste Ergebnisse",
-    "create_world": "Welt erschaffen ✨",
+    "start_adventure": "Abenteuer starten! ✨",
     "creating": "Deine magische Welt entsteht...",
     "continue": "Weiter →",
-    "chars": {
-      "wizard": { "name": "Zauberer", "desc": "Meister der Magie", "companion": "Eule 🦉" },
-      "explorer": { "name": "Entdecker", "desc": "Bezwinger des Unbekannten", "companion": "Fuchs 🦊" },
-      "robot": { "name": "Roboter", "desc": "Hüter des Wissens", "companion": "Drone 🚁" }
-    }
+    "choose_world": "Wähle deine Welt",
+    "pdf_upload": "📄 PDF hochladen",
+    "pdf_loading": "Wird gelesen…",
+    "pdf_aria": "PDF hochladen",
+    "pdf_error_open": "PDF konnte nicht geöffnet werden",
+    "pdf_error_extract": "Der PDF-Text konnte nicht extrahiert werden. Bitte kopiere den Text manuell.",
+    "pdf_error_size": "PDF ist zu groß (max. 10 MB)",
+    "pdf_loaded": "✓ {{name}} geladen ({{chars}} Zeichen)"
   },
   "game": {
     "room": "Raum {{current}} von {{total}}",
     "score": "{{score}} Punkte",
     "hp": "Leben",
     "correct": "Richtig! +{{points}} ✨",
-    "wrong": "Fast! Versuch's nochmal",
+    "wrong": "Knapp! Nochmal probieren",
     "combo": "KOMBO x{{count}}! 🔥",
     "time_up": "Zeit abgelaufen!",
     "true": "Wahr",
     "false": "Falsch",
-    "result": "Ergebnis: {{score}}/{{total}} richtig"
+    "result": "Ergebnis: {{score}}/{{total}} richtig",
+    "trap": "Das war eine Falle! 😄",
+    "continue": "Weiter →",
+    "points": "{{score}} Punkte",
+    "memory_complete": "{{pairs}} Paare in {{seconds}} Sekunden!",
+    "fill_complete": "Lückentext gemeistert! 📝",
+    "fill_correct_count": "{{correct}} / {{total}} richtig ({{accuracy}}%)",
+    "errors_count": "{{count}} Fehler",
+    "confirm": "Bestätigen",
+    "hint_btn": "💡 Hinweis zeigen (-{{penalty}} Punkte)",
+    "correct_answer_was": "Richtig wäre: {{answer}}",
+    "choose_mode": "✅ Wählen",
+    "type_mode": "⌨️ Tippen",
+    "correct_simple": "✨ Richtig!",
+    "wrong_simple": "❌ Falsch!",
+    "no_fill_blanks": "Keine Lückentext-Fragen verfügbar.",
+    "no_memory_pairs": "Zu wenige Memory-Paare (mind. {{min}}) verfügbar.",
+    "no_tf_questions": "Keine Wahr/Falsch-Fragen verfügbar.",
+    "paused": "Pausiert",
+    "tab_return": "Zurück zum Tab, um weiterzuspielen"
   },
   "boss": {
     "appears": "Der weise Hüter erscheint...",
     "special_time": "⚡ Zeitangriff! Nur 10 Sekunden!",
     "special_fog": "🌫️ Nebelfluch! Antworten versteckt!",
+    "special_shuffle": "🎲 Chaos! Alles durchgemischt!",
     "hp": "Hüter-Leben",
     "defeated": "Hüter besiegt! 🎉",
     "defeat_message": "Mut ist, es nochmal zu versuchen 💪",
@@ -51,20 +73,25 @@
     "subtitle": "Du hast den Hüter besiegt!",
     "score": "Dein Score: {{score}}",
     "level_up": "⭐ Level {{level}} erreicht!",
-    "reward_normal": "Du hast einen normalen Skin erhalten!",
-    "reward_rare": "🔵 Du hast einen seltenen Skin erhalten!",
-    "reward_epic": "💜 Epischer Fund! Seltener Skin!",
-    "reward_legendary": "🌟 LEGENDÄR! Einzigartiger Charakter!",
     "play_again": "Nochmal spielen",
     "new_world": "Neue Welt",
-    "tap_to_open": "Tippe zum Öffnen"
+    "tap_to_open": "Tippe zum Öffnen",
+    "guest_save_prompt": "Melde dich an, um Level und Streak zu speichern! 🏆"
   },
   "gameover": {
     "title": "💫 Fast geschafft!",
     "subtitle": "Der Hüter war heute zu stark...",
     "retry": "Nochmal versuchen",
     "new_world": "Neue Welt",
-    "learned": "Was du heute gelernt hast:"
+    "learned": "Was du heute gelernt hast:",
+    "quote_0": "Jeder Meister war einmal ein Anfänger. 🌱",
+    "quote_1": "Fehler sind Schritte auf dem Weg zum Erfolg. 🚀",
+    "quote_2": "Gib nicht auf – du bist näher als du denkst. ⭐"
+  },
+  "cookie": {
+    "text": "Wir nutzen technisch notwendige Cookies und Supabase für die App-Funktionalität.",
+    "more": "Mehr in unserer Datenschutzerklärung",
+    "accept": "Verstanden"
   },
   "errors": {
     "content_unsafe": "Dieser Inhalt ist für Schüler nicht geeignet. Bitte gib Lernstoff aus der Schule ein.",
@@ -88,10 +115,23 @@
     "feature1_title": "Wissenschaftlich fundiert",
     "feature1_desc": "Spaced Repetition und Active Recall eingebaut",
     "feature2_title": "Echtes Gameplay",
-    "feature2_desc": "Nicht langweilig – echte Mini-Spiele und Bosskämpfe",
-    "feature3_title": "Gemeinsam lernen",
-    "feature3_desc": "Klassen-Raids, Freunde herausfordern",
+    "feature2_desc": "4 Mini-Spiele, Bosskämpfe und tägliche Herausforderungen",
+    "feature3_title": "Liga & Rangliste",
+    "feature3_desc": "Tritt gegen andere an und klettere in der wöchentlichen Liga",
     "subjects_title": "Alle Schulfächer:",
+    "subject_biology": "Biologie",
+    "subject_history": "Geschichte",
+    "subject_math": "Mathe",
+    "subject_physics": "Physik",
+    "subject_chemistry": "Chemie",
+    "subject_languages": "Sprachen",
+    "subject_geography": "Geographie",
+    "subject_cs": "Informatik",
+    "subject_art": "Kunst",
+    "subject_music": "Musik",
+    "subject_politics": "Politik",
+    "subject_economics": "Wirtschaft",
+    "testimonials_title": "Was Lernende sagen",
     "testimonial1_text": "Endlich lerne ich freiwillig!",
     "testimonial1_author": "Max, 15 Jahre",
     "testimonial2_text": "Meine Klasse ist begeistert",
@@ -110,7 +150,7 @@
     "plan_pro_cta": "Pro starten",
     "plan_school_name": "Schule",
     "plan_school_price": "199€/Monat",
-    "plan_school_features": "Klassen-Management\nAnalytics\nLehrer-Dashboard\nPrioritäts-Support",
+    "plan_school_features": "Unbegrenzte Welten\nAnalytics & Statistiken\nLehrer-Dashboard\nPrioritäts-Support",
     "plan_school_cta": "Kontakt aufnehmen",
     "cta_title": "Starte jetzt dein Abenteuer – kostenlos",
     "cta_button": "Jetzt kostenlos starten →",
@@ -125,10 +165,49 @@
     "sign_in_google": "Mit Google anmelden",
     "sign_in_email": "Mit E-Mail anmelden",
     "continue_guest": "Als Gast weiterspielen",
+    "guest_toast": "Spielst als Gast – Fortschritt wird nicht gespeichert 👻",
     "email_sent": "Check deine E-Mails für den Login-Link!",
     "email_placeholder": "deine@email.de",
     "send_magic_link": "Magic Link senden",
+    "sending": "Wird gesendet…",
     "back": "← Zurück"
+  },
+  "league": {
+    "back": "← Zurück",
+    "title": "Liga",
+    "weekly_reset": "Wöchentlicher Reset {{when}} (Montag 00:00)",
+    "tomorrow": "morgen",
+    "in_days": "in {{days}} Tagen",
+    "rank": "Platz #{{rank}}",
+    "unranked": "Unplatziert",
+    "xp_this_week": "{{xp}} XP diese Woche",
+    "xp_to_next": "Noch {{xp}} XP bis {{tier}}",
+    "leaderboard": "Rangliste",
+    "loading": "Lade…",
+    "empty": "Noch keine Einträge diese Woche.",
+    "you": "(Du)",
+    "sign_in_prompt": "Melde dich an um in der Liga zu spielen!",
+    "sign_in_button": "Jetzt anmelden",
+    "play_dungeon": "⚔️ Dungeon spielen",
+    "unlocked_at": "Freischalten ab {{sessions}} Sessions",
+    "sessions_remaining": "Noch {{sessions}} Sessions",
+    "sessions_to_unlock": "Noch {{sessions}} Sessions bis {{name}}"
+  },
+  "common": {
+    "back_home": "← Zurück zur Startseite",
+    "install_app": "📱 App installieren",
+    "sound_mute": "Sound stummschalten",
+    "sound_unmute": "Sound einschalten"
+  },
+  "offline": {
+    "title": "Du bist offline",
+    "desc": "Bereits gespielte Welten stehen dir offline zur Verfügung.",
+    "retry": "Erneut versuchen"
+  },
+  "notfound": {
+    "title": "Seite nicht gefunden",
+    "desc": "Diese Seite existiert nicht oder wurde verschoben.",
+    "home": "Zur Startseite"
   },
   "profile": {
     "title": "Profil",
@@ -142,6 +221,85 @@
     "achievements": "Errungenschaften",
     "sound": "Sound",
     "sound_desc": "Spielgeräusche ein- oder ausschalten",
-    "new_adventure": "Neues Abenteuer starten"
+    "new_adventure": "Neues Abenteuer starten",
+    "xp_this_week": "{{xp}} XP diese Woche",
+    "to_league": "Zur Liga →",
+    "ach_first_win_label": "Erster Sieg",
+    "ach_first_win_desc": "Ersten Boss besiegt",
+    "ach_level5_label": "Aufsteiger",
+    "ach_level5_desc": "Level 5 erreicht",
+    "ach_level10_label": "Legende",
+    "ach_level10_desc": "Level 10 erreicht",
+    "ach_streak3_label": "3-Tage-Streak",
+    "ach_streak3_desc": "3 Tage am Stück gelernt",
+    "ach_streak7_label": "Wochenkämpfer",
+    "ach_streak7_desc": "7 Tage am Stück gelernt",
+    "ach_streak30_label": "Monatsmeister",
+    "ach_streak30_desc": "30 Tage am Stück gelernt",
+    "review_badge_title_one": "{{count}} Frage zur Wiederholung",
+    "review_badge_title_other": "{{count}} Fragen zur Wiederholung",
+    "review_badge_sub": "Spaced Repetition – jetzt üben!",
+    "sessions": "Sessions",
+    "ach_sessions10_label": "Stammgast",
+    "ach_sessions10_desc": "10 Sessions gespielt",
+    "ach_sessions50_label": "Veteran",
+    "ach_sessions50_desc": "50 Sessions abgeschlossen",
+    "daily_challenge": "Tägliche Aufgabe",
+    "challenge_done": "Erledigt ✓"
+  },
+  "challenge": {
+    "win_session_label": "Siegreich",
+    "win_session_desc": "Gewinne eine Session heute",
+    "no_gameover_label": "Unbesiegbar",
+    "no_gameover_desc": "Spiele ohne Game Over",
+    "combo_3_label": "Kombo-König",
+    "combo_3_desc": "Erreiche 3x Kombo in einem Spiel",
+    "bonus_xp": "+50 Bonus-XP"
+  },
+  "keys": {
+    "hint": "Tasten: {{keys}}",
+    "or": "oder"
+  },
+  "lang": {
+    "de": "DE",
+    "en": "EN",
+    "switch_to_en": "Switch to English",
+    "switch_to_de": "Zu Deutsch wechseln"
+  },
+  "dungeon": {
+    "quit": "Aufgeben",
+    "quit_confirm": "Wirklich aufgeben? Dein Fortschritt in dieser Runde geht verloren."
+  },
+  "auth_extra": {
+    "session_expired": "Deine Sitzung ist abgelaufen – bitte neu anmelden"
+  },
+  "league_extra": {
+    "empty_cta": "Sei der Erste und trage dich ein! 🚀"
+  },
+  "victory_extra": {
+    "streak_badge": "{{count}}-Tage Streak"
+  },
+  "worlds": {
+    "my_worlds": "Meine Welten",
+    "empty": "Noch keine gespeicherten Welten",
+    "login_hint": "Anmelden, um gespeicherte Welten zu sehen",
+    "count": "{{count}} von {{max}} Welten",
+    "count_unlimited": "{{count}} Welten",
+    "questions": "{{count}} Fragen",
+    "delete": "Löschen",
+    "delete_title": "Welt wirklich löschen?",
+    "delete_desc": "Diese Aktion kann nicht rückgängig gemacht werden. Alle Lernfortschritte für diese Welt gehen verloren.",
+    "delete_cancel": "Abbrechen",
+    "delete_confirm": "Ja, löschen",
+    "delete_error": "Fehler beim Löschen. Bitte versuche es erneut.",
+    "limit_warning": "Du hast {{count}} Welten erstellt. Lösche alte Welten, um Platz zu schaffen.",
+    "created_at": "Erstellt {{date}}"
+  },
+  "onboarding_extra": {
+    "tip_0": "KI liest deinen Lernstoff...",
+    "tip_1": "Fragen werden generiert...",
+    "tip_2": "Boss-Gegner wird erschaffen...",
+    "tip_3": "Welt wird zusammengebaut...",
+    "tip_4": "Fast fertig – noch ein Moment..."
   }
 }

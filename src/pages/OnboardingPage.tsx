@@ -7,6 +7,14 @@ import { useGameStore } from '../stores/gameStore'
 import { generateQuestions } from '../utils/generateQuestions'
 import { getAvailableWorlds, getLockedWorlds } from '../data/worlds'
 
+const LOADING_TIP_KEYS = [
+  'onboarding_extra.tip_0',
+  'onboarding_extra.tip_1',
+  'onboarding_extra.tip_2',
+  'onboarding_extra.tip_3',
+  'onboarding_extra.tip_4',
+] as const
+
 const EXAMPLE_CHIPS = [
   {
     label: '🌿 Photosynthese',
@@ -36,32 +44,74 @@ const slideVariants = {
   exit: { x: -100, opacity: 0 },
 }
 
-type PdfPage = { getTextContent: () => Promise<{ items: Array<{ str: string }> }> }
-type PdfDoc = { numPages: number; getPage: (n: number) => Promise<PdfPage> }
-type PdfJsLib = {
-  GlobalWorkerOptions: { workerSrc: string }
-  getDocument: (opts: { data: ArrayBuffer }) => { promise: Promise<PdfDoc> }
-}
+/** Extract clean, structured text from a PDF file using pdfjs-dist (npm) */
+async function extractTextFromPdf(file: File): Promise<string> {
+  // Dynamic import to keep initial bundle small
+  const pdfjsLib = await import('pdfjs-dist')
 
-function loadPdfJs(): Promise<PdfJsLib> {
-  const w = window as unknown as { pdfjsLib?: PdfJsLib }
-  if (w.pdfjsLib) return Promise.resolve(w.pdfjsLib)
-  return new Promise((resolve, reject) => {
-    const script = document.createElement('script')
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'
-    script.onload = () => {
-      const lib = (window as unknown as { pdfjsLib?: PdfJsLib }).pdfjsLib
-      if (!lib) {
-        reject(new Error('pdfjsLib nicht verfügbar'))
-        return
+  // Set the worker source – Vite resolves this to a separate chunk
+  pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+    'pdfjs-dist/build/pdf.worker.min.mjs',
+    import.meta.url,
+  ).toString()
+
+  const buffer = await file.arrayBuffer()
+
+  let pdf: import('pdfjs-dist').PDFDocumentProxy
+  try {
+    pdf = await pdfjsLib.getDocument({
+      data: new Uint8Array(buffer),
+      disableFontFace: true,
+      useSystemFonts: false,
+    }).promise
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : 'unknown'
+    throw Object.assign(new Error(detail), { code: 'pdf_error_open' })
+  }
+
+  const pageCount = pdf.numPages
+  const paragraphs: string[] = []
+
+  for (let pageNum = 1; pageNum <= pageCount; pageNum++) {
+    const page = await pdf.getPage(pageNum)
+    const content = await page.getTextContent()
+
+    // Group text items into lines by their Y-position
+    interface TextLine { y: number; texts: string[] }
+    const lineMap = new Map<number, TextLine>()
+
+    for (const item of content.items) {
+      if (!('str' in item)) continue
+      const textItem = item as { str: string; transform: number[] }
+      if (!textItem.str.trim()) continue
+
+      // Round Y to nearest 2px to group items on the same visual line
+      const y = Math.round(textItem.transform[5] / 2) * 2
+
+      if (!lineMap.has(y)) {
+        lineMap.set(y, { y, texts: [] })
       }
-      lib.GlobalWorkerOptions.workerSrc =
-        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
-      resolve(lib)
+      lineMap.get(y)!.texts.push(textItem.str)
     }
-    script.onerror = () => reject(new Error('pdf.js konnte nicht geladen werden'))
-    document.head.appendChild(script)
-  })
+
+    // Sort lines by Y descending (top to bottom), join texts per line
+    const sortedLines = Array.from(lineMap.values())
+      .sort((a, b) => b.y - a.y)
+      .map((line) => line.texts.join(' ').trim())
+      .filter((l) => l.length > 0)
+
+    if (sortedLines.length > 0) {
+      paragraphs.push(sortedLines.join('\n'))
+    }
+  }
+
+  const fullText = paragraphs.join('\n\n').trim()
+
+  if (fullText.length < 50) {
+    throw Object.assign(new Error('extract'), { code: 'pdf_error_extract' })
+  }
+
+  return fullText
 }
 
 export default function OnboardingPage() {
@@ -81,6 +131,7 @@ export default function OnboardingPage() {
       return () => clearTimeout(timer)
     }
   }, [step])
+
   const [name, setName] = useState('')
   const [learningText, setLearningText] = useState('')
   const [selectedWorldId, setLocalWorldId] = useState('fire')
@@ -88,6 +139,16 @@ export default function OnboardingPage() {
   const [error, setError] = useState<string | null>(null)
   const [pdfLoading, setPdfLoading] = useState(false)
   const [pdfStatus, setPdfStatus] = useState<{ ok: boolean; message: string } | null>(null)
+  const [tipIndex, setTipIndex] = useState(0)
+
+  // Rotate loading tip every 2 seconds while question generation is running
+  useEffect(() => {
+    if (!isLoading) { setTipIndex(0); return }
+    const timer = setInterval(() => {
+      setTipIndex((i) => (i + 1) % LOADING_TIP_KEYS.length)
+    }, 2000)
+    return () => clearInterval(timer)
+  }, [isLoading])
 
   const stars = useMemo(
     () =>
@@ -102,8 +163,13 @@ export default function OnboardingPage() {
     []
   )
 
-  const canContinueStep1 = name.trim().length >= 2
+  const canContinueStep1 = name.trim().length >= 2 && name.trim().length <= 20
   const canSubmitStep2 = learningText.length >= 80 && !isLoading
+
+  const allWorlds = useMemo(
+    () => [...getAvailableWorlds(totalSessions), ...getLockedWorlds(totalSessions)],
+    [totalSessions]
+  )
 
   const handleNext = () => {
     if (step < 3) setStep(step + 1)
@@ -116,22 +182,28 @@ export default function OnboardingPage() {
   const handlePdfUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+
+    if (file.size > 10 * 1024 * 1024) {
+      setPdfStatus({ ok: false, message: t('onboarding.pdf_error_size') })
+      return
+    }
+
     setPdfLoading(true)
     setPdfStatus(null)
+    setError(null)
+
     try {
-      const pdfjsLib = await loadPdfJs()
-      const buffer = await file.arrayBuffer()
-      const pdf = await pdfjsLib.getDocument({ data: buffer }).promise
-      let text = ''
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i)
-        const content = await page.getTextContent()
-        text += content.items.map((item) => item.str).join(' ') + '\n'
-      }
-      setLearningText(text.trim())
-      setPdfStatus({ ok: true, message: `✓ ${file.name} geladen (${pdf.numPages} Seiten)` })
-    } catch {
-      setPdfStatus({ ok: false, message: 'PDF konnte nicht gelesen werden' })
+      const text = await extractTextFromPdf(file)
+      setLearningText(text)
+      setPdfStatus({
+        ok: true,
+        message: t('onboarding.pdf_loaded', { name: file.name, chars: text.length }),
+      })
+    } catch (err) {
+      const code = (err as { code?: string }).code
+      const msg = code ? t(`onboarding.${code}`) : (err instanceof Error ? err.message : t('onboarding.pdf_error_open'))
+      setPdfStatus({ ok: false, message: msg })
+      toast.error(msg, { duration: 5000 })
     } finally {
       setPdfLoading(false)
       if (pdfInputRef.current) pdfInputRef.current.value = ''
@@ -139,6 +211,7 @@ export default function OnboardingPage() {
   }
 
   const handleSubmit = async () => {
+    if (!canSubmitStep2) return
     setIsLoading(true)
     setError(null)
     try {
@@ -150,14 +223,19 @@ export default function OnboardingPage() {
     } catch (err) {
       const message = err instanceof Error ? err.message : t('errors.api_error')
       setError(message)
-      toast.error(message)
+      toast.error(message, { duration: 5000 })
     } finally {
       setIsLoading(false)
     }
   }
 
   return (
-    <div className="relative min-h-screen bg-dark overflow-hidden flex flex-col items-center justify-center px-6">
+    <motion.div
+      className="relative min-h-screen bg-dark overflow-hidden flex flex-col items-center justify-center px-6"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.4 }}
+    >
       {/* Stars */}
       {stars.map((star) => (
         <motion.div
@@ -174,10 +252,7 @@ export default function OnboardingPage() {
         <motion.div
           className="absolute rounded-full"
           style={{
-            top: '10%',
-            left: '15%',
-            width: 500,
-            height: 500,
+            top: '10%', left: '15%', width: 500, height: 500,
             background: 'radial-gradient(circle, rgba(108,60,225,0.15) 0%, transparent 70%)',
           }}
           animate={{ scale: [1, 1.1, 1], opacity: [0.5, 0.8, 0.5] }}
@@ -186,10 +261,7 @@ export default function OnboardingPage() {
         <motion.div
           className="absolute rounded-full"
           style={{
-            top: '40%',
-            right: '10%',
-            width: 400,
-            height: 400,
+            top: '40%', right: '10%', width: 400, height: 400,
             background: 'radial-gradient(circle, rgba(30,100,255,0.12) 0%, transparent 70%)',
           }}
           animate={{ scale: [1.1, 1, 1.1], opacity: [0.4, 0.7, 0.4] }}
@@ -198,10 +270,7 @@ export default function OnboardingPage() {
         <motion.div
           className="absolute rounded-full"
           style={{
-            bottom: '15%',
-            left: '30%',
-            width: 350,
-            height: 350,
+            bottom: '15%', left: '30%', width: 350, height: 350,
             background: 'radial-gradient(circle, rgba(0,200,150,0.10) 0%, transparent 70%)',
           }}
           animate={{ scale: [1, 1.15, 1], opacity: [0.3, 0.6, 0.3] }}
@@ -212,13 +281,14 @@ export default function OnboardingPage() {
       {/* Progress Dots */}
       <div className="absolute top-8 flex gap-3 z-20">
         {[1, 2, 3].map((dot) => (
-          <div
+          <motion.div
             key={dot}
-            className="w-3 h-3 rounded-full transition-all duration-300"
-            style={{
+            className="w-3 h-3 rounded-full"
+            animate={{
               backgroundColor: dot === step ? '#6C3CE1' : '#0F3460',
-              boxShadow: dot === step ? '0 0 10px rgba(108,60,225,0.6)' : 'none',
+              boxShadow: dot === step ? '0 0 10px rgba(108,60,225,0.6)' : '0 0 0px transparent',
             }}
+            transition={{ duration: 0.3 }}
           />
         ))}
       </div>
@@ -226,6 +296,8 @@ export default function OnboardingPage() {
       {/* Step Content */}
       <div className="relative z-10 w-full mx-auto" style={{ maxWidth: '500px' }}>
         <AnimatePresence mode="wait">
+
+          {/* ── Step 1: Name ── */}
           {step === 1 && (
             <motion.div
               key="step1"
@@ -246,11 +318,10 @@ export default function OnboardingPage() {
                 maxLength={20}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && canContinueStep1) handleNext()
-                }}
+                onKeyDown={(e) => { if (e.key === 'Enter' && canContinueStep1) handleNext() }}
                 placeholder={t('onboarding.step1_placeholder')}
                 className="bg-dark-card border border-dark-border text-white rounded-xl p-4 text-lg w-full outline-none focus:border-primary transition-colors"
+                aria-label={t('onboarding.step1_placeholder')}
               />
 
               <motion.button
@@ -266,6 +337,7 @@ export default function OnboardingPage() {
             </motion.div>
           )}
 
+          {/* ── Step 2: Learning Text ── */}
           {step === 2 && (
             <motion.div
               key="step2"
@@ -274,19 +346,33 @@ export default function OnboardingPage() {
               animate="center"
               exit="exit"
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="flex flex-col items-center gap-6"
+              className="flex flex-col items-center gap-4"
             >
               <h1 className="font-display text-white text-center" style={{ fontSize: '28px' }}>
                 {t('onboarding.step3_title')}
               </h1>
 
+              {/* PDF Upload */}
               <div className="w-full flex flex-col items-start gap-2">
                 <button
+                  type="button"
                   onClick={() => pdfInputRef.current?.click()}
                   disabled={pdfLoading}
-                  className="bg-dark-card border border-dark-border text-white rounded-full px-4 py-2 cursor-pointer whitespace-nowrap text-sm hover:border-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex items-center gap-2 bg-dark-card border border-dark-border text-white rounded-full px-4 py-2 cursor-pointer whitespace-nowrap text-sm hover:border-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  aria-label={t('onboarding.pdf_aria')}
                 >
-                  {pdfLoading ? '⏳ Wird gelesen...' : '📄 PDF hochladen'}
+                  {pdfLoading ? (
+                    <>
+                      <motion.span
+                        className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full"
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
+                      />
+                      {t('onboarding.pdf_loading')}
+                    </>
+                  ) : (
+                    <>{t('onboarding.pdf_upload')}</>
+                  )}
                 </button>
                 <input
                   ref={pdfInputRef}
@@ -294,29 +380,47 @@ export default function OnboardingPage() {
                   accept=".pdf"
                   onChange={(e) => void handlePdfUpload(e)}
                   style={{ display: 'none' }}
+                  aria-hidden="true"
                 />
-                {pdfStatus && (
-                  <span className="text-xs" style={{ color: pdfStatus.ok ? '#00C896' : '#F87171' }}>
-                    {pdfStatus.message}
-                  </span>
-                )}
+                <AnimatePresence>
+                  {pdfStatus && (
+                    <motion.span
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0 }}
+                      className="text-xs"
+                      style={{ color: pdfStatus.ok ? '#00C896' : '#F87171' }}
+                    >
+                      {pdfStatus.message}
+                    </motion.span>
+                  )}
+                </AnimatePresence>
               </div>
 
+              {/* Textarea */}
               <div className="w-full relative">
                 <textarea
                   value={learningText}
                   onChange={(e) => setLearningText(e.target.value)}
                   placeholder={t('onboarding.step3_placeholder')}
                   className="bg-dark-card border border-dark-border text-white rounded-xl p-4 text-base w-full outline-none focus:border-primary transition-colors"
-                  style={{ minHeight: '120px', resize: 'none' }}
+                  style={{ minHeight: '140px', resize: 'none' }}
+                  aria-label={t('onboarding.step3_placeholder')}
                 />
-                <span
+                <motion.span
                   className="absolute bottom-3 right-3 text-xs transition-colors"
-                  style={{ color: learningText.length >= 80 ? '#00C896' : '#6b7280' }}
+                  animate={{ color: learningText.length >= 80 ? '#00C896' : '#6b7280' }}
                 >
-                  {learningText.length}/80
-                </span>
+                  {learningText.length >= 80
+                    ? `${learningText.length} ✓`
+                    : `${learningText.length}/80`}
+                </motion.span>
               </div>
+
+              {/* Hint */}
+              <p className="text-xs text-gray-500 w-full -mt-2">
+                {t('onboarding.step3_hint')}
+              </p>
 
               {/* Example Chips */}
               <div className="w-full overflow-x-auto scrollbar-hide">
@@ -324,7 +428,10 @@ export default function OnboardingPage() {
                   {EXAMPLE_CHIPS.map((chip) => (
                     <button
                       key={chip.label}
-                      onClick={() => setLearningText(chip.text)}
+                      onClick={() => {
+                        setLearningText(chip.text)
+                        setPdfStatus(null)
+                      }}
                       className="bg-dark-card border border-dark-border text-white rounded-full px-4 py-2 cursor-pointer whitespace-nowrap text-sm hover:border-primary transition-colors"
                     >
                       {chip.label}
@@ -333,9 +440,18 @@ export default function OnboardingPage() {
                 </div>
               </div>
 
-              {error && (
-                <p className="text-red-400 text-sm text-center">{error}</p>
-              )}
+              <AnimatePresence>
+                {error && (
+                  <motion.p
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    className="text-red-400 text-sm text-center"
+                  >
+                    {error}
+                  </motion.p>
+                )}
+              </AnimatePresence>
 
               <div className="flex gap-3">
                 <motion.button
@@ -362,6 +478,7 @@ export default function OnboardingPage() {
             </motion.div>
           )}
 
+          {/* ── Step 3: World selection ── */}
           {step === 3 && (
             <motion.div
               key="step3"
@@ -373,11 +490,11 @@ export default function OnboardingPage() {
               className="flex flex-col items-center gap-6"
             >
               <h1 className="font-display text-white text-center" style={{ fontSize: '28px' }}>
-                Wähle deine Welt
+                {t('onboarding.choose_world')}
               </h1>
 
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3 w-full">
-                {[...getAvailableWorlds(totalSessions), ...getLockedWorlds(totalSessions)].map((world) => {
+                {allWorlds.map((world) => {
                   const isUnlocked = world.unlockedAtSessions <= totalSessions
                   const isSelected = selectedWorldId === world.id
                   const sessionsRemaining = world.unlockedAtSessions - totalSessions
@@ -386,8 +503,12 @@ export default function OnboardingPage() {
                     return (
                       <motion.div
                         key={world.id}
+                        role="button"
+                        tabIndex={0}
+                        aria-pressed={isSelected}
                         onClick={() => setLocalWorldId(world.id)}
-                        className="rounded-2xl p-4 cursor-pointer flex flex-col items-center text-center"
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setLocalWorldId(world.id) }}
+                        className="rounded-2xl p-4 cursor-pointer flex flex-col items-center text-center focus:outline-none focus-visible:ring-2"
                         style={{
                           backgroundColor: `${world.primaryColor}26`,
                           border: isSelected ? `2px solid ${world.primaryColor}` : '1px solid #0F3460',
@@ -403,7 +524,7 @@ export default function OnboardingPage() {
                         </span>
                         {world.unlockedAtSessions > 0 && (
                           <span className="text-gray-500 mt-1" style={{ fontSize: '11px' }}>
-                            Freischalten ab {world.unlockedAtSessions} Sessions
+                            {t('league.unlocked_at', { sessions: world.unlockedAtSessions })}
                           </span>
                         )}
                       </motion.div>
@@ -413,14 +534,13 @@ export default function OnboardingPage() {
                   return (
                     <div
                       key={world.id}
-                      onClick={() =>
-                        toast.error(`Noch ${sessionsRemaining} Sessions bis ${world.name}`)
-                      }
+                      aria-disabled="true"
+                      tabIndex={-1}
                       className="rounded-2xl p-4 flex flex-col items-center text-center"
                       style={{
                         backgroundColor: '#0F1A30',
                         border: '1px solid #0F3460',
-                        opacity: 0.4,
+                        opacity: 0.45,
                         cursor: 'not-allowed',
                       }}
                     >
@@ -429,14 +549,25 @@ export default function OnboardingPage() {
                         {world.name}
                       </span>
                       <span className="text-gray-500 mt-1" style={{ fontSize: '11px' }}>
-                        Noch {sessionsRemaining} Sessions
+                        {t('league.sessions_remaining', { sessions: sessionsRemaining })}
                       </span>
                     </div>
                   )
                 })}
               </div>
 
-              {error && <p className="text-red-400 text-sm text-center">{error}</p>}
+              <AnimatePresence>
+                {error && (
+                  <motion.p
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    className="text-red-400 text-sm text-center"
+                  >
+                    {error}
+                  </motion.p>
+                )}
+              </AnimatePresence>
 
               <div className="flex gap-3">
                 <motion.button
@@ -449,25 +580,25 @@ export default function OnboardingPage() {
                 >
                   ←
                 </motion.button>
+
                 <motion.button
                   onClick={() => void handleSubmit()}
                   disabled={isLoading}
                   className="font-body font-bold text-white cursor-pointer border-none disabled:opacity-40 disabled:cursor-not-allowed relative overflow-hidden"
-                  style={{ fontSize: '16px', background: '#6C3CE1', padding: '14px 40px', borderRadius: '50px' }}
+                  style={{ fontSize: '16px', background: '#6C3CE1', padding: '14px 40px', borderRadius: '50px', minWidth: '180px' }}
                   whileHover={!isLoading ? { scale: 1.05 } : {}}
                   whileTap={!isLoading ? { scale: 0.95 } : {}}
                 >
+                  {/* Shimmer */}
                   {isLoading && (
                     <motion.div
-                      className="absolute inset-0"
-                      style={{
-                        background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent)',
-                      }}
+                      className="absolute inset-0 pointer-events-none"
+                      style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent)' }}
                       animate={{ x: ['-100%', '100%'] }}
                       transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
                     />
                   )}
-                  <span className="relative flex items-center gap-2">
+                  <span className="relative flex items-center justify-center gap-2">
                     {isLoading && (
                       <motion.span
                         className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full"
@@ -475,14 +606,30 @@ export default function OnboardingPage() {
                         transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
                       />
                     )}
-                    {isLoading ? t('onboarding.creating') : 'Abenteuer starten! ✨'}
+                    {isLoading ? t('onboarding.creating') : t('onboarding.start_adventure')}
                   </span>
                 </motion.button>
               </div>
+
+              {isLoading && (
+                <AnimatePresence mode="wait">
+                  <motion.p
+                    key={tipIndex}
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    transition={{ duration: 0.35 }}
+                    className="text-center text-sm text-gray-400 font-body"
+                  >
+                    {t(LOADING_TIP_KEYS[tipIndex])}
+                  </motion.p>
+                </AnimatePresence>
+              )}
             </motion.div>
           )}
+
         </AnimatePresence>
       </div>
-    </div>
+    </motion.div>
   )
 }

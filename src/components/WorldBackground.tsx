@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useState } from 'react'
 import { motion } from 'motion/react'
 import { useGameStore } from '../stores/gameStore'
 import { getWorldById } from '../data/worlds'
@@ -11,24 +11,23 @@ interface Particle {
   fontSize: number
 }
 
+// Particles are computed once per component mount (stable decorative values)
+function makeParticles(): Particle[] {
+  return Array.from({ length: 10 }, () => ({
+    left:     5 + Math.random() * 85,
+    top:      5 + Math.random() * 85,
+    duration: 3 + Math.random() * 4,
+    delay:    Math.random() * 4,
+    fontSize: 12 + Math.random() * 8,
+  }))
+}
+
 export default function WorldBackground() {
   const selectedWorldId = useGameStore((s) => s.selectedWorldId)
-  const totalSessions = useGameStore((s) => s.totalSessions)
-  void totalSessions
-
   const worldTheme = getWorldById(selectedWorldId)
 
-  const particles = useMemo<Particle[]>(
-    () =>
-      Array.from({ length: 10 }, () => ({
-        left:     5 + Math.random() * 85,
-        top:      5 + Math.random() * 85,
-        duration: 3 + Math.random() * 4,
-        delay:    Math.random() * 4,
-        fontSize: 12 + Math.random() * 8,
-      })),
-    [selectedWorldId]
-  )
+  // useState lazy init: Math.random only called once, satisfies react-hooks/purity
+  const [particles] = useState<Particle[]>(makeParticles)
 
   return (
     <div

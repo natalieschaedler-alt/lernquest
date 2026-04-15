@@ -1,13 +1,15 @@
-import { useMemo } from 'react'
+import { useState } from 'react'
 import { motion } from 'motion/react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import LanguageToggle from '../components/ui/LanguageToggle'
 
 // ── Constants ──
-const SUBJECTS = [
-  'Biologie', 'Geschichte', 'Mathe', 'Physik', 'Chemie',
-  'Sprachen', 'Geographie', 'Informatik', 'Kunst', 'Musik',
-  'Politik', 'Wirtschaft',
+const SUBJECTS_KEYS = [
+  'landing.subject_biology', 'landing.subject_history', 'landing.subject_math',
+  'landing.subject_physics', 'landing.subject_chemistry', 'landing.subject_languages',
+  'landing.subject_geography', 'landing.subject_cs', 'landing.subject_art',
+  'landing.subject_music', 'landing.subject_politics', 'landing.subject_economics',
 ]
 
 const HOW_STEPS = [
@@ -108,17 +110,16 @@ export default function LandingPage() {
   const navigate = useNavigate()
   const { t } = useTranslation()
 
-  const stars = useMemo<StarData[]>(
-    () =>
-      Array.from({ length: 60 }, (_, i) => ({
-        id: i,
-        top: `${Math.random() * 100}%`,
-        left: `${Math.random() * 100}%`,
-        size: Math.random() * 2 + 1,
-        duration: Math.random() * 4 + 2,
-        delay: Math.random() * 4,
-      })),
-    [],
+  // useState lazy init: Math.random only called once, satisfies react-hooks/purity
+  const [stars] = useState<StarData[]>(() =>
+    Array.from({ length: 60 }, (_, i) => ({
+      id: i,
+      top: `${Math.random() * 100}%`,
+      left: `${Math.random() * 100}%`,
+      size: Math.random() * 2 + 1,
+      duration: Math.random() * 4 + 2,
+      delay: Math.random() * 4,
+    }))
   )
 
   const ctaButton = (
@@ -187,6 +188,23 @@ export default function LandingPage() {
 
       {/* Content */}
       <div className="relative z-10">
+
+        {/* ═══ NAV ═══ */}
+        <nav className="flex items-center justify-between px-6 py-4 max-w-6xl mx-auto">
+          <span className="font-display text-white text-lg select-none">⚔️ LearnQuest</span>
+          <div className="flex items-center gap-3">
+            <LanguageToggle />
+            <motion.button
+              onClick={() => void navigate('/onboarding')}
+              className="font-body font-bold text-white cursor-pointer border-none"
+              style={{ fontSize: '14px', background: '#6C3CE1', padding: '10px 24px', borderRadius: '50px' }}
+              whileHover={{ scale: 1.05, transition: { duration: 0.15 } }}
+              whileTap={{ scale: 0.95 }}
+            >
+              {t('landing.hero_cta')}
+            </motion.button>
+          </div>
+        </nav>
 
         {/* ═══ HERO ═══ */}
         <section className="min-h-screen flex items-center justify-center px-6">
@@ -282,13 +300,13 @@ export default function LandingPage() {
               {t('landing.subjects_title')}
             </h2>
             <div className="flex flex-wrap justify-center gap-3">
-              {SUBJECTS.map((subject) => (
+              {SUBJECTS_KEYS.map((key) => (
                 <motion.span
-                  key={subject}
+                  key={key}
                   className="bg-dark-card border border-dark-border rounded-full px-4 py-2 text-white/80 text-sm font-body"
                   whileHover={{ scale: 1.05, borderColor: '#6C3CE1' }}
                 >
-                  {subject}
+                  {t(key)}
                 </motion.span>
               ))}
             </div>
@@ -298,6 +316,9 @@ export default function LandingPage() {
         {/* ═══ TESTIMONIALS ═══ */}
         <Section>
           <div className="max-w-4xl mx-auto">
+            <h2 className="font-display text-white text-2xl lg:text-4xl text-center mb-12">
+              {t('landing.testimonials_title')}
+            </h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
               {TESTIMONIALS.map((item, i) => (
                 <motion.div
@@ -376,6 +397,8 @@ export default function LandingPage() {
                   ))}
                 </ul>
                 <motion.button
+                  type="button"
+                  onClick={() => window.location.href = 'mailto:school@learnquest.app'}
                   className="mt-6 font-body font-bold text-white cursor-pointer border border-dark-border bg-transparent"
                   style={{ padding: '12px 24px', borderRadius: '50px', fontSize: '14px' }}
                   whileHover={{ scale: 1.05 }}
@@ -418,7 +441,7 @@ export default function LandingPage() {
             <Link to="/datenschutz" className="hover:text-white/60">{t('landing.footer_privacy')}</Link>
             <Link to="/impressum" className="hover:text-white/60">{t('landing.footer_imprint')}</Link>
             <Link to="/agb" className="hover:text-white/60">{t('landing.footer_terms')}</Link>
-            <a href="mailto:kontakt@example.com" className="hover:text-white/60">{t('landing.footer_contact')}</a>
+            <a href="mailto:hallo@learnquest.app" className="hover:text-white/60">{t('landing.footer_contact')}</a>
           </div>
         </footer>
       </div>

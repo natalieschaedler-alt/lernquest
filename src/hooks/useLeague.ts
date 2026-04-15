@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { getWeeklyLeaderboard } from '../lib/database'
 import { useAuth } from './useAuth'
 
@@ -33,10 +33,9 @@ export function useLeague() {
   const [userWeeklyXP, setUserWeeklyXP] = useState(0)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => { void load() }, [user])
-
-  const load = async () => {
-    setLoading(true)
+  // Declare load as useCallback before the effect so it can be referenced as a stable dep.
+  // setLoading is initialized to true in useState — no synchronous setState in effect needed.
+  const load = useCallback(async () => {
     const data = await getWeeklyLeaderboard(50)
     setLeaderboard(data)
     if (user) {
@@ -44,7 +43,12 @@ export function useLeague() {
       setUserWeeklyXP(me?.weekly_xp ?? 0)
     }
     setLoading(false)
-  }
+  }, [user])
+
+  useEffect(() => {
+    const t = setTimeout(() => { void load() }, 0)
+    return () => clearTimeout(t)
+  }, [load])
 
   const userRank = user ? leaderboard.findIndex(d => d.id === user.id) + 1 : 0
   const userTier = getTierFromXP(userWeeklyXP)

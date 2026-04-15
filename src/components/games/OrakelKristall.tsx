@@ -3,9 +3,9 @@ import { motion, AnimatePresence } from 'motion/react'
 import { useTranslation } from 'react-i18next'
 import type { Question } from '../../types'
 import { soundManager } from '../../utils/soundManager'
+import { TIMER } from '../../lib/gameConfig'
 
 // ── Constants ──
-const TIMER_DURATION = 5
 const TOTAL_QUESTIONS = 10
 const SCORE_SCREEN_DURATION = 2000
 const SWIPE_THRESHOLD = 50
@@ -82,20 +82,7 @@ export default function OrakelKristall({ questions, onComplete }: OrakelKristall
 
   const currentStatement = statements[currentIdx]
 
-  // Timer: auto-fail when time runs out
-  useEffect(() => {
-    if (answered || showScore) return
-
-    answeredRef.current = false
-    const timeout = setTimeout(() => {
-      if (!answeredRef.current) {
-        handleAnswer(null)
-      }
-    }, TIMER_DURATION * 1000)
-
-    return () => clearTimeout(timeout)
-  }, [currentIdx, answered, showScore])
-
+  // Declare handleAnswer before the timer effect that references it
   const handleAnswer = useCallback(
     (userSaysTrue: boolean | null) => {
       if (answeredRef.current || showScore) return
@@ -127,13 +114,16 @@ export default function OrakelKristall({ questions, onComplete }: OrakelKristall
       // Advance after feedback
       setTimeout(() => {
         if (currentIdx >= limitedQuestions.length - 1) {
-          // Show score screen
+          const finalScore = correct ? score + 1 : score
+          const finalMistakes = correct ? mistakes : [...mistakes, currentIdx]
+          // Skip score screen when used as single-question mode (e.g. from DungeonPage)
+          if (limitedQuestions.length === 1) {
+            onComplete(finalScore, finalMistakes)
+            return
+          }
           setShowScore(true)
           setTimeout(() => {
-            onComplete(
-              correct ? score + 1 : score,
-              correct ? mistakes : [...mistakes, currentIdx],
-            )
+            onComplete(finalScore, finalMistakes)
           }, SCORE_SCREEN_DURATION)
         } else {
           setCurrentIdx((prev) => prev + 1)
@@ -147,6 +137,37 @@ export default function OrakelKristall({ questions, onComplete }: OrakelKristall
     },
     [currentStatement, comboCount, currentIdx, limitedQuestions.length, score, mistakes, onComplete, showScore],
   )
+
+  // Timer: auto-fail when time runs out
+  useEffect(() => {
+    if (answered || showScore) return
+
+    answeredRef.current = false
+    const timeout = setTimeout(() => {
+      if (!answeredRef.current) {
+        handleAnswer(null)
+      }
+    }, TIMER.ORAKEL * 1000)
+
+    return () => clearTimeout(timeout)
+  }, [currentIdx, answered, showScore, handleAnswer])
+
+  // Keyboard shortcuts: Y/J/ArrowRight → true, N/ArrowLeft → false
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (answered || showScore) return
+      const key = e.key.toLowerCase()
+      if (key === 'y' || key === 'j' || key === 'arrowright') {
+        e.preventDefault()
+        handleAnswer(true)
+      } else if (key === 'n' || key === 'arrowleft') {
+        e.preventDefault()
+        handleAnswer(false)
+      }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [answered, showScore, handleAnswer])
 
   // Touch handlers for swipe
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
@@ -193,11 +214,20 @@ export default function OrakelKristall({ questions, onComplete }: OrakelKristall
         ? '0 0 30px rgba(255,107,53,0.5)'
         : '0 0 20px rgba(108,60,225,0.4)'
 
+  // Guard: no questions to display
+  if (limitedQuestions.length === 0) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px] text-white font-body">
+        <p className="text-center px-6 text-gray-400">{t('game.no_tf_questions')}</p>
+      </div>
+    )
+  }
+
   if (showScore) {
     const finalScore = score
     return (
       <motion.div
-        className="relative w-full h-full min-h-[400px] overflow-hidden rounded-2xl bg-[#0D0A1A] flex items-center justify-center"
+        className="relative w-full h-full min-h-[400px] overflow-hidden rounded-2xl bg-dark-deep flex items-center justify-center"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.5 }}
@@ -234,7 +264,7 @@ export default function OrakelKristall({ questions, onComplete }: OrakelKristall
 
   return (
     <div
-      className="relative w-full h-full min-h-[400px] overflow-hidden rounded-2xl bg-[#0D0A1A] select-none"
+      className="relative w-full h-full min-h-[400px] overflow-hidden rounded-2xl bg-dark-deep select-none"
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
@@ -278,7 +308,7 @@ export default function OrakelKristall({ questions, onComplete }: OrakelKristall
             className="h-full bg-primary rounded-full"
             initial={{ width: '100%' }}
             animate={{ width: '0%' }}
-            transition={{ duration: TIMER_DURATION, ease: 'linear' }}
+            transition={{ duration: TIMER.ORAKEL, ease: 'linear' }}
           />
         </div>
       </div>
@@ -375,25 +405,27 @@ export default function OrakelKristall({ questions, onComplete }: OrakelKristall
       {/* Answer buttons */}
       <div className="relative z-10 flex justify-center gap-6 mt-8 px-6">
         <motion.button
-          className="flex items-center justify-center bg-accent/80 text-white font-body font-bold rounded-xl"
+          className="flex flex-col items-center justify-center bg-accent/80 text-white font-body font-bold rounded-xl"
           style={{ width: 120, height: 56 }}
           whileTap={!answered ? { scale: 0.92 } : undefined}
           whileHover={!answered ? { scale: 1.05 } : undefined}
           onClick={() => handleAnswer(false)}
           disabled={answered}
         >
-          ❌ {t('game.false', 'Falsch')}
+          <span>❌ {t('game.false', 'Falsch')}</span>
+          <span className="text-[9px] opacity-50 mt-0.5">[N / ←]</span>
         </motion.button>
 
         <motion.button
-          className="flex items-center justify-center bg-secondary/80 text-white font-body font-bold rounded-xl"
+          className="flex flex-col items-center justify-center bg-secondary/80 text-white font-body font-bold rounded-xl"
           style={{ width: 120, height: 56 }}
           whileTap={!answered ? { scale: 0.92 } : undefined}
           whileHover={!answered ? { scale: 1.05 } : undefined}
           onClick={() => handleAnswer(true)}
           disabled={answered}
         >
-          ✅ {t('game.true', 'Wahr')}
+          <span>✅ {t('game.true', 'Wahr')}</span>
+          <span className="text-[9px] opacity-50 mt-0.5">[Y / →]</span>
         </motion.button>
       </div>
 
@@ -409,8 +441,26 @@ export default function OrakelKristall({ questions, onComplete }: OrakelKristall
             <span
               className={`font-display text-lg ${isCorrect ? 'text-secondary' : 'text-accent'}`}
             >
-              {isCorrect ? '✨ Richtig!' : '❌ Falsch!'}
+              {isCorrect ? t('game.correct_simple') : t('game.wrong_simple')}
             </span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Explanation panel – shown after answering */}
+      <AnimatePresence>
+        {answered && limitedQuestions[currentIdx]?.explanation && (
+          <motion.div
+            className="absolute bottom-0 left-0 right-0 z-20 bg-dark-card/95 backdrop-blur-sm rounded-b-2xl px-4 py-3 border-t border-dark-border"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.35, ease: 'easeOut' }}
+          >
+            <p className="text-[11px] text-gray-300 font-body leading-snug">
+              <span className="text-secondary mr-1">💡</span>
+              {limitedQuestions[currentIdx].explanation}
+            </p>
           </motion.div>
         )}
       </AnimatePresence>

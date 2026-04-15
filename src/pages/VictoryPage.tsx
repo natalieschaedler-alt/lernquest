@@ -1,9 +1,11 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react'
 import { motion } from 'motion/react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import Confetti from 'react-confetti'
-import { useGameStore } from '../stores/gameStore'
+import toast from 'react-hot-toast'
+
+const Confetti = lazy(() => import('react-confetti'))
+import { useGameStore, ACHIEVEMENT_DEFS } from '../stores/gameStore'
 import { getWorldById } from '../data/worlds'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
@@ -30,9 +32,17 @@ export default function VictoryPage() {
 
   const score = useGameStore((s) => s.score)
   const level = useGameStore((s) => s.level)
+  const streak = useGameStore((s) => s.streak)
+  const questions = useGameStore((s) => s.questions)
+  const currentWorldId = useGameStore((s) => s.currentWorldId)
   const addXP = useGameStore((s) => s.addXP)
   const updateStreak = useGameStore((s) => s.updateStreak)
   const resetGame = useGameStore((s) => s.resetGame)
+  const incrementSessions = useGameStore((s) => s.incrementSessions)
+  const checkNewAchievements = useGameStore((s) => s.checkNewAchievements)
+  const initDailyChallenge = useGameStore((s) => s.initDailyChallenge)
+  const completeDailyChallenge = useGameStore((s) => s.completeDailyChallenge)
+  const dailyChallenge = useGameStore((s) => s.dailyChallenge)
   const selectedWorldId = useGameStore((s) => s.selectedWorldId)
   const worldTheme = getWorldById(selectedWorldId)
 
@@ -42,7 +52,7 @@ export default function VictoryPage() {
   const [leveledUp, setLeveledUp] = useState(false)
   const [newLevel, setNewLevel] = useState(level)
 
-  const rewardResult = useMemo(() => getRewardResult(worldTheme), [])
+  const [rewardResult] = useState<RewardResult>(() => getRewardResult(worldTheme))
   const xpGain = useMemo(() => 50 + Math.floor(score / 10), [score])
   const hasRun = useRef(false)
 
@@ -52,30 +62,84 @@ export default function VictoryPage() {
 
     soundManager.playVictory()
     updateStreak()
+    incrementSessions()
+    initDailyChallenge()
+
     const totalXP = xpGain + rewardResult.xpBonus
     const result = addXP(totalXP)
     if (result.leveledUp) {
-      setLeveledUp(true)
-      setNewLevel(result.newLevel)
+      queueMicrotask(() => {
+        setLeveledUp(true)
+        setNewLevel(result.newLevel)
+        setTimeout(() => soundManager.playLevelUp(), 600)
+      })
+    }
+
+    // Check streak milestone and play sound
+    const currentStreak = useGameStore.getState().streak
+    if (currentStreak === 3 || currentStreak === 7 || currentStreak === 30) {
+      setTimeout(() => soundManager.playStreak(), 1200)
+    }
+
+    // Notify newly unlocked achievements (check after XP/level update settles)
+    queueMicrotask(() => {
+      const newIds = checkNewAchievements()
+      if (newIds.length > 0) {
+        setTimeout(() => soundManager.playAchievement(), 800)
+        newIds.forEach((id, idx) => {
+          const def = ACHIEVEMENT_DEFS.find((d) => d.id === id)
+          if (!def) return
+          setTimeout(() => {
+            toast(`${def.icon} ${t(def.labelKey)} – ${t(def.descKey)}`, {
+              duration: 4000,
+              style: {
+                background: '#1E1E3F',
+                color: '#fff',
+                border: '1px solid #6C3CE1',
+                fontSize: '14px',
+              },
+              icon: '🏆',
+            })
+          }, idx * 500)
+        })
+      }
+    })
+
+    // Mark win_session / no_gameover daily challenge complete
+    const dc = dailyChallenge
+    if (dc && !dc.completed && (dc.type === 'win_session' || dc.type === 'no_gameover')) {
+      completeDailyChallenge()
+      // Award bonus XP
+      addXP(50)
+      toast(t('challenge.bonus_xp'), {
+        icon: '🎯',
+        duration: 3000,
+        style: { background: '#1E1E3F', color: '#FFD700', border: '1px solid #FFD700' },
+      })
     }
 
     if (user) {
       void supabase.rpc('add_weekly_xp', { p_user_id: user.id, p_xp: totalXP })
       void supabase.rpc('update_streak', { p_user_id: user.id })
+      const nonMemoryCount = questions.filter((q) => q.question_type !== 'memory').length
       void supabase.from('sessions').insert({
         user_id: user.id,
-        world_id: null,
+        world_id: currentWorldId?.startsWith('local-') ? null : currentWorldId,
         score,
         world_theme: selectedWorldId,
         boss_defeated: true,
         questions_correct: Math.round(score / 10),
-        questions_total: 10,
+        questions_total: Math.max(nonMemoryCount, 1),
       })
+    } else {
+      setTimeout(() => {
+        toast(t('victory.guest_save_prompt'), { icon: '💾', duration: 5000 })
+      }, 2000)
     }
 
     const timer = setTimeout(() => setShowConfetti(false), 5000)
     return () => clearTimeout(timer)
-  }, [updateStreak, addXP, xpGain, rewardResult.xpBonus, user, score, selectedWorldId])
+  }, [updateStreak, addXP, incrementSessions, xpGain, rewardResult.xpBonus, user, score, selectedWorldId, currentWorldId, questions, t, checkNewAchievements, initDailyChallenge, completeDailyChallenge, dailyChallenge])
 
   function handleOpenBox() {
     if (isOpening || boxOpened) return
@@ -86,8 +150,12 @@ export default function VictoryPage() {
   const stagger = 0.15
 
   return (
-    <div className="min-h-screen bg-dark text-white flex flex-col items-center justify-center px-6 relative overflow-hidden">
-      {showConfetti && <Confetti recycle={false} numberOfPieces={300} />}
+    <main className="min-h-screen bg-dark text-white flex flex-col items-center justify-center px-6 relative overflow-hidden">
+      {showConfetti && (
+        <div aria-hidden="true">
+          <Suspense fallback={null}><Confetti recycle={false} numberOfPieces={300} /></Suspense>
+        </div>
+      )}
 
       {/* Title */}
       <motion.h1
@@ -133,6 +201,19 @@ export default function VictoryPage() {
         >
           +{xpGain} XP
         </motion.p>
+
+        {/* Streak display */}
+        {streak > 1 && (
+          <motion.p
+            className="mt-2 text-sm font-body"
+            style={{ color: '#FF9500' }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: stagger * 3.5 }}
+          >
+            🔥 {t('victory_extra.streak_badge', { count: streak })}
+          </motion.p>
+        )}
       </motion.div>
 
       {/* Level Up */}
@@ -159,6 +240,7 @@ export default function VictoryPage() {
           <>
             <motion.button
               onClick={handleOpenBox}
+              aria-label={t('victory.tap_to_open')}
               className="cursor-pointer border-none bg-transparent"
               style={{ fontSize: '64px', lineHeight: 1 }}
               animate={{ rotate: [-8, 8, -8] }}
@@ -167,7 +249,7 @@ export default function VictoryPage() {
             >
               📦
             </motion.button>
-            <p className="text-gray-500 text-sm mt-2">{t('victory.tap_to_open')}</p>
+            <p className="text-gray-500 text-sm mt-2" aria-hidden="true">{t('victory.tap_to_open')}</p>
           </>
         )}
 
@@ -209,7 +291,7 @@ export default function VictoryPage() {
               className="font-body mt-2"
               style={{ fontSize: '16px', color: rewardResult.color }}
             >
-              +{rewardResult.xpBonus} XP Bonus!
+              +{rewardResult.xpBonus} XP
             </p>
           </motion.div>
         )}
@@ -217,7 +299,7 @@ export default function VictoryPage() {
 
       {/* Buttons */}
       <motion.div
-        className="flex gap-4 mt-8"
+        className="flex flex-wrap justify-center gap-4 mt-8"
         initial={{ y: 20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ delay: stagger * 6 }}
@@ -227,7 +309,7 @@ export default function VictoryPage() {
             resetGame()
             navigate('/dungeon', { replace: true })
           }}
-          className="font-body font-bold text-white cursor-pointer border-none"
+          className="font-body font-bold text-white cursor-pointer border-none whitespace-nowrap"
           style={{ fontSize: '16px', background: '#6C3CE1', padding: '14px 28px', borderRadius: '50px' }}
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
@@ -240,7 +322,7 @@ export default function VictoryPage() {
             resetGame()
             navigate('/onboarding', { replace: true })
           }}
-          className="font-body font-bold text-white cursor-pointer border border-dark-border"
+          className="font-body font-bold text-white cursor-pointer border border-dark-border whitespace-nowrap"
           style={{ fontSize: '16px', background: 'transparent', padding: '14px 28px', borderRadius: '50px' }}
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
@@ -248,6 +330,31 @@ export default function VictoryPage() {
           {t('victory.new_world')}
         </motion.button>
       </motion.div>
-    </div>
+
+      {/* Quick navigation */}
+      <motion.div
+        className="flex gap-6 mt-5"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: stagger * 7 }}
+      >
+        <motion.button
+          onClick={() => navigate('/profile')}
+          className="font-body text-sm text-gray-400 cursor-pointer border-none bg-transparent hover:text-white transition-colors"
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+        >
+          👤 {t('profile.title')}
+        </motion.button>
+        <motion.button
+          onClick={() => navigate('/league')}
+          className="font-body text-sm text-gray-400 cursor-pointer border-none bg-transparent hover:text-white transition-colors"
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+        >
+          🏆 {t('league.title')}
+        </motion.button>
+      </motion.div>
+    </main>
   )
 }

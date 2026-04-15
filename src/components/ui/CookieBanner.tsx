@@ -1,17 +1,14 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'motion/react'
+import { useTranslation } from 'react-i18next'
 
 const STORAGE_KEY = 'cookie-consent'
 
 export default function CookieBanner() {
-  const [visible, setVisible] = useState(false)
-
-  useEffect(() => {
-    if (localStorage.getItem(STORAGE_KEY) !== 'accepted') {
-      setVisible(true)
-    }
-  }, [])
+  const { t } = useTranslation()
+  // Lazy initializer reads localStorage once on mount — avoids synchronous setState in effect
+  const [visible, setVisible] = useState(() => localStorage.getItem(STORAGE_KEY) !== 'accepted')
 
   const handleAccept = () => {
     localStorage.setItem(STORAGE_KEY, 'accepted')
@@ -31,20 +28,21 @@ export default function CookieBanner() {
           <div className="max-w-3xl mx-auto flex flex-col sm:flex-row items-center gap-4">
             <div className="flex-1">
               <p className="font-body text-white/70 text-sm">
-                Wir nutzen technisch notwendige Cookies und Supabase für die App-Funktionalität.
+                {t('cookie.text')}
               </p>
               <Link
                 to="/datenschutz"
                 className="font-body text-primary/70 hover:text-primary text-xs mt-1 inline-block"
               >
-                Mehr in unserer Datenschutzerklärung
+                {t('cookie.more')}
               </Link>
             </div>
             <button
+              type="button"
               onClick={handleAccept}
               className="bg-primary hover:bg-primary/80 text-white font-body font-semibold text-sm px-5 py-2 rounded-full transition-colors whitespace-nowrap"
             >
-              Verstanden
+              {t('cookie.accept')}
             </button>
           </div>
         </motion.div>

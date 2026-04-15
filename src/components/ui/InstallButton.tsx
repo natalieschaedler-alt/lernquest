@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
+import { useTranslation } from 'react-i18next'
 
 interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>
@@ -7,8 +8,12 @@ interface BeforeInstallPromptEvent extends Event {
 }
 
 export default function InstallButton() {
+  const { t } = useTranslation()
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null)
-  const [installed, setInstalled] = useState(false)
+  // Lazy initializer checks standalone mode once on mount — avoids synchronous setState in effect
+  const [installed, setInstalled] = useState(
+    () => window.matchMedia('(display-mode: standalone)').matches
+  )
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -20,11 +25,6 @@ export default function InstallButton() {
 
     window.addEventListener('beforeinstallprompt', handler)
     window.addEventListener('appinstalled', installedHandler)
-
-    // Check if already installed
-    if (window.matchMedia('(display-mode: standalone)').matches) {
-      setInstalled(true)
-    }
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handler)
@@ -55,7 +55,7 @@ export default function InstallButton() {
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
       >
-        📱 App installieren
+        {t('common.install_app')}
       </motion.button>
     </AnimatePresence>
   )

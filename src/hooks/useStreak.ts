@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useCallback } from 'react'
 import { useGameStore } from '../stores/gameStore'
 import { useAuth } from './useAuth'
 import { supabase } from '../lib/supabase'
@@ -7,13 +7,10 @@ export function useStreak() {
   const { user } = useAuth()
   const { streak, updateStreak } = useGameStore()
 
-  useEffect(() => {
-    updateStreak()
-    if (user) void syncWithSupabase()
-  }, [user])
-
-  const syncWithSupabase = async () => {
-    const result = await supabase.rpc('update_streak', { p_user_id: user!.id })
+  // Declare syncWithSupabase before the effect that calls it
+  const syncWithSupabase = useCallback(async () => {
+    if (!user) return
+    const result = await supabase.rpc('update_streak', { p_user_id: user.id })
     if (result.data) {
       const serverStreak = (result.data as { streak: number }).streak
       const localStreak = useGameStore.getState().streak
@@ -21,7 +18,12 @@ export function useStreak() {
         useGameStore.setState({ streak: serverStreak })
       }
     }
-  }
+  }, [user])
+
+  useEffect(() => {
+    updateStreak()
+    if (user) void syncWithSupabase()
+  }, [user, updateStreak, syncWithSupabase])
 
   return { streak }
 }

@@ -1,8 +1,9 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'motion/react'
 import { useGameStore } from '../stores/gameStore'
+import { useAuth } from '../hooks/useAuth'
 import { getWorldById } from '../data/worlds'
 import type { Question } from '../types'
 import Wortwirbel from '../components/games/Wortwirbel'
@@ -10,6 +11,8 @@ import OrakelKristall from '../components/games/OrakelKristall'
 import MemoryKarten from '../components/games/MemoryKarten'
 import LueckentextSpiel from '../components/games/LueckentextSpiel'
 import WorldBackground from '../components/WorldBackground'
+import { pointsForDifficulty } from '../lib/gameConfig'
+import { saveMistake } from '../lib/database'
 
 type GameType = 'wortwirbel' | 'orakel' | 'lueckentext'
 
@@ -21,20 +24,22 @@ function getGameForQuestion(q: Question | undefined): GameType | null {
   return 'wortwirbel'
 }
 
-function pointsForDifficulty(difficulty: 1 | 2 | 3): number {
-  return difficulty === 3 ? 30 : difficulty === 2 ? 20 : 10
-}
-
 export default function DungeonPage() {
   const navigate = useNavigate()
   const { t } = useTranslation()
+  const { user } = useAuth()
 
   const questions = useGameStore((s) => s.questions)
   const playerHP = useGameStore((s) => s.playerHP)
   const score = useGameStore((s) => s.score)
   const selectedWorldId = useGameStore((s) => s.selectedWorldId)
+  const currentWorldId = useGameStore((s) => s.currentWorldId)
   const answerQuestion = useGameStore((s) => s.answerQuestion)
   const addXP = useGameStore((s) => s.addXP)
+  const resetGame = useGameStore((s) => s.resetGame)
+  const initDailyChallenge = useGameStore((s) => s.initDailyChallenge)
+  const completeDailyChallenge = useGameStore((s) => s.completeDailyChallenge)
+  const dailyChallenge = useGameStore((s) => s.dailyChallenge)
 
   const worldTheme = getWorldById(selectedWorldId)
 
@@ -68,6 +73,7 @@ export default function DungeonPage() {
   const [combo, setCombo] = useState(0)
   const [showReward, setShowReward] = useState(false)
   const [rewardText, setRewardText] = useState('')
+  const [tabHidden, setTabHidden] = useState(false)
 
   // Guard: keine Fragen → Onboarding
   useEffect(() => {
@@ -76,15 +82,33 @@ export default function DungeonPage() {
     }
   }, [questions.length, navigate])
 
+  // Ensure daily challenge exists when entering the dungeon
+  useEffect(() => {
+    initDailyChallenge()
+  }, [initDailyChallenge])
+
+  // Pause-Banner when user switches tabs (timer games are still running in HueterBoss,
+  // but we can at least warn the user in the dungeon phase)
+  useEffect(() => {
+    const handleVisibility = () => setTabHidden(document.hidden)
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
+  }, [])
+
   const currentStep = !memoryDone && hasMemory ? 0 : (hasMemory ? 1 : 0) + nonMemoryIndex
   const progress = totalSteps > 0 ? (currentStep / totalSteps) * 100 : 0
 
   const currentQuestion: Question | undefined = nonMemoryQuestions[nonMemoryIndex]
 
-  function handleNext(correct: boolean, points: number) {
+  const handleNext = useCallback((correct: boolean, points: number) => {
     if (answered) return
     setAnswered(true)
     answerQuestion(correct, points)
+
+    // Spaced repetition: persist wrong answers for logged-in users
+    if (!correct && user && currentWorldId && !currentWorldId.startsWith('local-')) {
+      void saveMistake(user.id, currentWorldId, nonMemoryIndex)
+    }
 
     if (correct) {
       const newCombo = combo + 1
@@ -97,6 +121,14 @@ export default function DungeonPage() {
       setShowReward(true)
       addXP(points)
       setTimeout(() => setShowReward(false), 1000)
+
+      // Mark combo_3 daily challenge complete when 3x combo is reached
+      if (newCombo >= 3) {
+        const dc = useGameStore.getState().dailyChallenge
+        if (dc && !dc.completed && dc.type === 'combo_3') {
+          completeDailyChallenge()
+        }
+      }
     } else {
       setCombo(0)
     }
@@ -114,7 +146,31 @@ export default function DungeonPage() {
       setNonMemoryIndex((prev) => prev + 1)
       setAnswered(false)
     }, 1200)
-  }
+  }, [answered, answerQuestion, user, currentWorldId, nonMemoryIndex, combo, t, addXP, completeDailyChallenge, navigate, nonMemoryQuestions.length])
+
+  const handleMemoryComplete = useCallback((memScore: number) => {
+    addXP(memScore)
+    setRewardText(`+${memScore} XP`)
+    setShowReward(true)
+    setTimeout(() => setShowReward(false), 1000)
+    setMemoryDone(true)
+    setAnswered(false)
+  }, [addXP])
+
+  const handleOrakelComplete = useCallback((orakelScore: number) => {
+    if (!currentQuestion) return
+    const correct = orakelScore > 0
+    const points = correct ? pointsForDifficulty(currentQuestion.difficulty) : 0
+    handleNext(correct, points)
+  }, [currentQuestion, handleNext])
+
+  const handleLueckentextComplete = useCallback((lueckScore: number) => {
+    handleNext(lueckScore > 0, lueckScore)
+  }, [handleNext])
+
+  const handleWortwirbel = useCallback((correct: boolean, points?: number) => {
+    handleNext(correct, points ?? 10)
+  }, [handleNext])
 
   if (questions.length === 0) return null
 
@@ -165,17 +221,50 @@ export default function DungeonPage() {
             </div>
           </div>
 
-          {/* Score */}
-          <motion.div
-            key={score}
-            className="font-display text-lg text-secondary"
-            initial={{ scale: 1.4, y: -4 }}
-            animate={{ scale: 1, y: 0 }}
-            transition={{ type: 'spring', damping: 12 }}
-          >
-            {t('game.score', { score })}
-          </motion.div>
+          {/* Score + Quit */}
+          <div className="flex items-center gap-3">
+            <motion.div
+              key={score}
+              className="font-display text-lg text-secondary"
+              initial={{ scale: 1.4, y: -4 }}
+              animate={{ scale: 1, y: 0 }}
+              transition={{ type: 'spring', damping: 12 }}
+              aria-live="polite"
+              aria-atomic="true"
+            >
+              {t('game.score', { score })}
+            </motion.div>
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm(t('dungeon.quit_confirm'))) {
+                  resetGame()
+                  navigate('/onboarding', { replace: true })
+                }
+              }}
+              aria-label={t('dungeon.quit')}
+              className="font-body text-xs text-gray-500 hover:text-white transition-colors cursor-pointer border border-dark-border rounded-lg px-2 py-1 bg-transparent"
+            >
+              ✕
+            </button>
+          </div>
         </div>
+
+        {/* Daily challenge strip */}
+        {dailyChallenge && !dailyChallenge.completed && (
+          <div className="max-w-2xl mx-auto mt-1 flex items-center gap-2 px-1">
+            <span className="text-xs text-yellow-400/70 font-body whitespace-nowrap">
+              🎯 {t(dailyChallenge.descKey)}
+            </span>
+          </div>
+        )}
+        {dailyChallenge?.completed && (
+          <div className="max-w-2xl mx-auto mt-1 flex items-center gap-2 px-1">
+            <span className="text-xs text-secondary font-body">
+              ✓ {t('profile.challenge_done')}
+            </span>
+          </div>
+        )}
       </header>
 
       {/* ── Main ── */}
@@ -193,46 +282,53 @@ export default function DungeonPage() {
               <MemoryKarten
                 questions={memoryQuestions}
                 primaryColor={worldTheme.primaryColor}
-                onComplete={(memScore) => {
-                  addXP(memScore)
-                  setRewardText(`+${memScore} XP`)
-                  setShowReward(true)
-                  setTimeout(() => setShowReward(false), 1000)
-                  setMemoryDone(true)
-                  setAnswered(false)
-                }}
+                onComplete={handleMemoryComplete}
               />
             ) : currentQuestion && gameType === 'orakel' ? (
               <OrakelKristall
                 questions={[currentQuestion]}
-                onComplete={(orakelScore) => {
-                  const correct = orakelScore > 0
-                  const points = correct ? pointsForDifficulty(currentQuestion.difficulty) : 0
-                  handleNext(correct, points)
-                }}
+                onComplete={handleOrakelComplete}
               />
             ) : currentQuestion && gameType === 'lueckentext' ? (
               <LueckentextSpiel
                 questions={[currentQuestion]}
                 primaryColor={worldTheme.primaryColor}
-                onComplete={(lueckScore) => {
-                  handleNext(lueckScore > 0, lueckScore)
-                }}
+                onComplete={handleLueckentextComplete}
               />
             ) : currentQuestion ? (
               <Wortwirbel
                 question={currentQuestion}
-                onAnswer={(correct, points) => handleNext(correct, points ?? 10)}
+                onAnswer={handleWortwirbel}
               />
             ) : null}
           </motion.div>
         </AnimatePresence>
       </main>
 
+      {/* ── Tab-hidden pause overlay ── */}
+      <AnimatePresence>
+        {tabHidden && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-dark/90 backdrop-blur-sm"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <div className="text-center">
+              <div className="text-5xl mb-4">⏸️</div>
+              <p className="font-display text-white text-2xl">{t('game.paused')}</p>
+              <p className="font-body text-white/60 mt-2">{t('game.tab_return')}</p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ── Reward overlay ── */}
       <AnimatePresence>
         {showReward && (
           <motion.div
+            role="status"
+            aria-live="assertive"
             className="fixed top-1/3 left-1/2 -translate-x-1/2 pointer-events-none z-50"
             initial={{ y: 0, opacity: 1, scale: 1 }}
             animate={{ y: -60, opacity: 0, scale: 1.3 }}

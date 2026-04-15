@@ -1,14 +1,23 @@
 import { Link } from 'react-router-dom'
+import { motion } from 'motion/react'
+import { useTranslation } from 'react-i18next'
 
 export default function DatenschutzPage() {
+  const { t } = useTranslation()
+
   return (
-    <div className="min-h-screen bg-dark text-white">
+    <motion.div
+      className="min-h-screen bg-dark text-white"
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4 }}
+    >
       <div className="max-w-3xl mx-auto px-6 py-12">
         <Link
           to="/"
-          className="inline-block mb-8 font-body text-primary hover:text-primary/80 text-sm"
+          className="inline-block mb-8 font-body text-primary hover:text-primary/80 transition-colors text-sm"
         >
-          &larr; Zurück zur Startseite
+          {t('common.back_home')}
         </Link>
 
         <h1 className="font-display text-3xl mb-8">Datenschutzerklärung</h1>
@@ -166,6 +175,6 @@ export default function DatenschutzPage() {
 
         <p className="font-body text-white/40 text-sm mt-12">Stand: April 2026</p>
       </div>
-    </div>
+    </motion.div>
   )
 }

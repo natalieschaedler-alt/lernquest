@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { motion } from 'motion/react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import toast from 'react-hot-toast'
 import { supabase } from '../lib/supabase'
 
 const GoogleIcon = () => (
@@ -40,7 +41,7 @@ export default function AuthPage() {
   }
 
   return (
-    <div className="min-h-screen bg-dark flex items-center justify-center px-4">
+    <main className="min-h-screen bg-dark flex items-center justify-center px-4">
       <motion.div
         className="w-full max-w-sm bg-dark-card rounded-2xl p-8 border border-dark-border"
         initial={{ opacity: 0, y: 20 }}
@@ -59,6 +60,7 @@ export default function AuthPage() {
         {!showEmail && !sent && (
           <div className="flex flex-col gap-3">
             <button
+              type="button"
               onClick={handleGoogle}
               className="flex items-center justify-center gap-3 w-full font-body font-semibold rounded-xl py-3 px-4 cursor-pointer border-none"
               style={{ background: '#ffffff', color: '#1A1A2E', fontSize: '15px' }}
@@ -68,6 +70,7 @@ export default function AuthPage() {
             </button>
 
             <button
+              type="button"
               onClick={() => setShowEmail(true)}
               className="w-full font-body font-semibold text-white rounded-xl py-3 px-4 cursor-pointer border-none"
               style={{ background: '#6C3CE1', fontSize: '15px' }}
@@ -76,7 +79,11 @@ export default function AuthPage() {
             </button>
 
             <button
-              onClick={() => void navigate(-1)}
+              type="button"
+              onClick={() => {
+                toast(t('auth.guest_toast'), { icon: '👤', duration: 4000 })
+                void navigate(-1)
+              }}
               className="w-full font-body text-sm cursor-pointer border-none bg-transparent mt-1"
               style={{ color: 'rgba(255,255,255,0.4)', fontSize: '14px' }}
             >
@@ -106,7 +113,7 @@ export default function AuthPage() {
               className="w-full font-body font-semibold text-white rounded-xl py-3 px-4 cursor-pointer border-none"
               style={{ background: '#6C3CE1', fontSize: '15px', opacity: loading ? 0.7 : 1 }}
             >
-              {loading ? '...' : t('auth.send_magic_link')}
+              {loading ? t('auth.sending') : t('auth.send_magic_link')}
             </button>
             <button
               type="button"
@@ -130,6 +137,6 @@ export default function AuthPage() {
           </motion.p>
         )}
       </motion.div>
-    </div>
+    </main>
   )
 }

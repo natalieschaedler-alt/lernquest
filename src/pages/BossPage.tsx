@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { motion } from 'motion/react'
 import { useGameStore } from '../stores/gameStore'
 import { getWorldById } from '../data/worlds'
 import HueterBoss from '../components/HueterBoss'
@@ -21,7 +22,12 @@ export default function BossPage() {
   if (questions.length === 0) return null
 
   return (
-    <div className="min-h-screen bg-dark text-white flex items-center justify-center p-4">
+    <motion.div
+      className="min-h-screen bg-dark text-white flex items-center justify-center p-4"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.4 }}
+    >
       <div className="w-full max-w-lg">
         <HueterBoss
           questions={questions}
@@ -35,6 +41,6 @@ export default function BossPage() {
           }}
         />
       </div>
-    </div>
+    </motion.div>
   )
 }

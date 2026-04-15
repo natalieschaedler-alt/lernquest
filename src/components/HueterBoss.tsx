@@ -1,13 +1,10 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { useTranslation } from 'react-i18next'
 import type { Question, WorldTheme } from '../types'
+import { TIMER, BOSS as BOSS_CONFIG } from '../lib/gameConfig'
 
 // ── Constants ──
-const TIMER_DURATION = 20
-const TIMER_FAST = 10
-const BOSS_HP = 5
-const PLAYER_SHIELDS = 3
 const INTRO_DURATION = 2500
 const VICTORY_DELAY = 2000
 const DEFEAT_DELAY = 1500
@@ -27,28 +24,25 @@ interface HueterBossProps {
 
 export default function HueterBoss(props: HueterBossProps) {
   const { questions, onVictory, onDefeat } = props
-
-  // Guard: keine Fragen → nichts rendern (BossPage navigiert weg)
-  if (!questions || questions.length === 0) {
-    return null
-  }
-
   const { t } = useTranslation()
 
   const bossEmoji = props.worldTheme?.bossEmoji ?? '🧙‍♂️'
   const bossName  = props.worldTheme?.bossName  ?? 'Der Weise Hüter'
   const bossColor = props.worldTheme?.primaryColor ?? '#6C3CE1'
-  const availableAttacks = props.worldTheme?.specialAttacks ?? []
+  const availableAttacks = useMemo(
+    () => props.worldTheme?.specialAttacks ?? [],
+    [props.worldTheme?.specialAttacks]
+  )
 
   const [phase, setPhase] = useState<'intro' | 'fight' | 'victory' | 'defeat'>('intro')
   const [questionIdx, setQuestionIdx] = useState(0)
-  const [bossHP, setBossHP] = useState(BOSS_HP)
-  const [shields, setShields] = useState(PLAYER_SHIELDS)
+  const [bossHP, setBossHP] = useState<number>(BOSS_CONFIG.HP)
+  const [shields, setShields] = useState<number>(BOSS_CONFIG.SHIELDS)
   const [score, setScore] = useState(0)
   const [answered, setAnswered] = useState(false)
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null)
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null)
-  const [timeLeft, setTimeLeft] = useState(TIMER_DURATION)
+  const [timeLeft, setTimeLeft] = useState<number>(TIMER.BOSS)
   const [specialAttack, setSpecialAttack] = useState<SpecialAttack>(null)
   const [showSpecialOverlay, setShowSpecialOverlay] = useState(false)
   const [fogActive, setFogActive] = useState(false)
@@ -71,39 +65,7 @@ export default function HueterBoss(props: HueterBossProps) {
     return () => clearTimeout(timeout)
   }, [])
 
-  // ── Timer ──
-  useEffect(() => {
-    if (phase !== 'fight' || answered) return
-
-    answeredRef.current = false
-    const duration = specialAttack === 'time' ? TIMER_FAST : TIMER_DURATION
-    setTimeLeft(duration)
-
-    timerRef.current = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          if (!answeredRef.current) {
-            answeredRef.current = true
-            handleAnswer(-1)
-          }
-          if (timerRef.current) clearInterval(timerRef.current)
-          return 0
-        }
-        return prev - 1
-      })
-    }, 1000)
-
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current)
-    }
-  }, [phase, questionIdx, answered, specialAttack])
-
-  // ── Fog timer ──
-  useEffect(() => {
-    if (!fogActive) return
-    const timeout = setTimeout(() => setFogActive(false), FOG_DURATION)
-    return () => clearTimeout(timeout)
-  }, [fogActive])
+  // Declare callbacks before effects that reference them
 
   const triggerSpecialAttack = useCallback(() => {
     if (availableAttacks.length === 0) return
@@ -169,7 +131,7 @@ export default function HueterBoss(props: HueterBossProps) {
 
         // Shake player
         setShakePlayer(true)
-        setTimeout(() => setShakePlayer(false), 500)
+        setTimeout(() => setShakePlayer(false), 600)
 
         // Defeat check
         if (newShields <= 0) {
@@ -190,6 +152,41 @@ export default function HueterBoss(props: HueterBossProps) {
     [currentQuestion, correctStreak, bossHP, shields, triggerSpecialAttack, availableAttacks.length],
   )
 
+  // ── Timer ──
+  useEffect(() => {
+    if (phase !== 'fight' || answered) return
+
+    answeredRef.current = false
+    const duration = specialAttack === 'time' ? TIMER.BOSS_FAST : TIMER.BOSS
+    setTimeLeft(duration)
+
+    timerRef.current = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          if (!answeredRef.current) {
+            answeredRef.current = true
+            handleAnswer(-1)
+          }
+          if (timerRef.current) clearInterval(timerRef.current)
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, questionIdx, answered, specialAttack])
+
+  // ── Fog timer ──
+  useEffect(() => {
+    if (!fogActive) return
+    const timeout = setTimeout(() => setFogActive(false), FOG_DURATION)
+    return () => clearTimeout(timeout)
+  }, [fogActive])
+
   // ── Victory/Defeat callbacks ──
   useEffect(() => {
     if (phase === 'victory') {
@@ -205,15 +202,18 @@ export default function HueterBoss(props: HueterBossProps) {
   // Timer SVG values
   const timerRadius = 24
   const timerCircumference = 2 * Math.PI * timerRadius
-  const maxTime = specialAttack === 'time' ? TIMER_FAST : TIMER_DURATION
+  const maxTime = specialAttack === 'time' ? TIMER.BOSS_FAST : TIMER.BOSS
   const timerOffset = timerCircumference * (1 - timeLeft / maxTime)
   const timerColor = timeLeft <= 5 ? '#FF6B35' : '#00C896'
+
+  // Guard: no questions – BossPage already redirects, but be safe here without breaking hooks
+  if (!questions || questions.length === 0) return null
 
   // ── Intro phase ──
   if (phase === 'intro') {
     return (
       <motion.div
-        className="min-h-[500px] bg-[#0D0A1A] rounded-2xl flex flex-col items-center justify-center relative overflow-hidden"
+        className="min-h-[500px] bg-dark-deep rounded-2xl flex flex-col items-center justify-center relative overflow-hidden"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
       >
@@ -259,7 +259,7 @@ export default function HueterBoss(props: HueterBossProps) {
   if (phase === 'victory') {
     return (
       <motion.div
-        className="min-h-[500px] bg-[#0D0A1A] rounded-2xl flex flex-col items-center justify-center relative overflow-hidden"
+        className="min-h-[500px] bg-dark-deep rounded-2xl flex flex-col items-center justify-center relative overflow-hidden"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
       >
@@ -302,7 +302,7 @@ export default function HueterBoss(props: HueterBossProps) {
   if (phase === 'defeat') {
     return (
       <motion.div
-        className="min-h-[500px] bg-[#0D0A1A] rounded-2xl flex flex-col items-center justify-center relative overflow-hidden"
+        className="min-h-[500px] bg-dark-deep rounded-2xl flex flex-col items-center justify-center relative overflow-hidden"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
       >
@@ -324,7 +324,7 @@ export default function HueterBoss(props: HueterBossProps) {
       : specialAttack === 'fog'
         ? t('boss.special_fog')
         : specialAttack === 'shuffle'
-          ? '🎲 Chaos! Alles durchgemischt!'
+          ? t('boss.special_shuffle')
           : ''
 
   // Fight-Phase braucht eine Frage – defensiv absichern
@@ -332,14 +332,14 @@ export default function HueterBoss(props: HueterBossProps) {
 
   // ── Fight phase ──
   return (
-    <div className="min-h-[500px] bg-[#0D0A1A] rounded-2xl relative overflow-hidden flex flex-col">
+    <div className="min-h-[500px] bg-dark-deep rounded-2xl relative overflow-hidden flex flex-col">
       {/* ── Boss HP ── */}
       <div className="px-6 pt-6 pb-2">
         <p className="text-center text-xs text-gray-400 font-body mb-2">
           {t('boss.hp')}
         </p>
         <div className="flex justify-center gap-2">
-          {Array.from({ length: BOSS_HP }).map((_, i) => (
+          {Array.from({ length: BOSS_CONFIG.HP }).map((_, i) => (
             <motion.span
               key={i}
               className="text-xl"
@@ -481,7 +481,7 @@ export default function HueterBoss(props: HueterBossProps) {
         animate={shakePlayer ? { x: SHAKE_KEYFRAMES } : { x: 0 }}
         transition={shakePlayer ? { duration: 0.4 } : undefined}
       >
-        {Array.from({ length: PLAYER_SHIELDS }).map((_, i) => (
+        {Array.from({ length: BOSS_CONFIG.SHIELDS }).map((_, i) => (
           <motion.span
             key={i}
             className="text-2xl"
@@ -525,7 +525,7 @@ export default function HueterBoss(props: HueterBossProps) {
       <AnimatePresence>
         {answered && isCorrect !== null && (
           <motion.div
-            className="absolute bottom-20 left-1/2 -translate-x-1/2 z-20 pointer-events-none"
+            className="absolute bottom-4 left-4 right-4 z-20 pointer-events-none flex flex-col items-center gap-1"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
@@ -535,6 +535,16 @@ export default function HueterBoss(props: HueterBossProps) {
             >
               {isCorrect ? t('boss.hit') : t('boss.miss')}
             </span>
+            {!isCorrect && currentQuestion.explanation && (
+              <motion.p
+                className="font-body text-xs text-center text-gray-300 bg-dark-card/80 rounded-lg px-3 py-1.5 max-w-xs"
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.15 }}
+              >
+                💡 {currentQuestion.explanation}
+              </motion.p>
+            )}
           </motion.div>
         )}
       </AnimatePresence>

@@ -7,9 +7,54 @@ body {
   font-family: 'Nunito', sans-serif;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
+  scroll-behavior: smooth;
 }
 
 * {
   box-sizing: border-box;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Global keyboard focus styles — visible only via keyboard navigation */
+:focus-visible {
+  outline: 2px solid #6C3CE1;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Remove focus ring for mouse/touch interactions */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Smooth progress bar and transition defaults */
+.transition-width {
+  transition: width 0.4s ease;
+}
+
+/* Page fade-in animation */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.4s ease forwards;
+}
+
+/* Score pop animation */
+@keyframes scorePop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+
+.animate-score-pop {
+  animation: scorePop 0.3s ease;
 }

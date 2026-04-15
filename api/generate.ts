@@ -1,7 +1,33 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { createClient } from '@supabase/supabase-js'
+import { Ratelimit } from '@upstash/ratelimit'
+import { Redis } from '@upstash/redis'
 
 const MODEL = 'claude-haiku-4-5-20251001'
 const LONG_TEXT_THRESHOLD = 6000
+const MIN_WORD_COUNT = 20
+const MAX_BODY_BYTES = 200_000 // 200 KB – rejects oversized payloads before parsing
+
+// ── Rate limiters (optional – only if Upstash env vars are set) ──
+// Both instances are created once at module load, not per-request.
+let authRatelimit: Ratelimit | null = null
+let guestRatelimit: Ratelimit | null = null
+if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+  const redis = new Redis({
+    url: process.env.UPSTASH_REDIS_REST_URL,
+    token: process.env.UPSTASH_REDIS_REST_TOKEN,
+  })
+  authRatelimit = new Ratelimit({
+    redis,
+    limiter: Ratelimit.slidingWindow(10, '1 h'),
+    analytics: false,
+  })
+  guestRatelimit = new Ratelimit({
+    redis,
+    limiter: Ratelimit.slidingWindow(3, '1 h'),
+    analytics: false,
+  })
+}
 
 function sendJson(res: ServerResponse, status: number, payload: unknown) {
   res.writeHead(status, { 'Content-Type': 'application/json' })
@@ -39,27 +65,75 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     res.writeHead(200, {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     })
     res.end()
     return
   }
 
   if (req.method !== 'POST') {
-    console.error('[generate] invalid method:', req.method)
     sendJson(res, 405, { error: 'Method not allowed', data: null })
     return
   }
 
+  // ── Auth check ──
+  const authHeader = req.headers['authorization']
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+
+  let userId: string | null = null
+  if (token) {
+    const supabaseUrl = process.env.VITE_SUPABASE_URL
+    const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY
+    if (supabaseUrl && supabaseKey) {
+      try {
+        const supabase = createClient(supabaseUrl, supabaseKey)
+        const { data } = await supabase.auth.getUser(token)
+        userId = data?.user?.id ?? null
+      } catch (e) {
+        console.warn('[generate] auth validation failed:', e)
+      }
+    }
+  }
+
+  // ── Rate limiting ──
+  // Authenticated users get 10 req/h; guests get 3 req/h.
+  if (authRatelimit && guestRatelimit) {
+    const identifier = userId
+      ?? (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim()
+      ?? 'anonymous'
+
+    const limiter = userId ? authRatelimit : guestRatelimit
+    const { success, remaining } = await limiter.limit(identifier)
+    if (!success) {
+      res.setHeader('X-RateLimit-Remaining', remaining)
+      sendJson(res, 429, { error: 'Rate limit überschritten. Bitte in einer Stunde erneut versuchen.', data: null })
+      return
+    }
+  }
+
+  // ── Body parsing ──
   let body: string
   try {
     body = await new Promise<string>((resolve, reject) => {
       let data = ''
-      req.on('data', (chunk: Buffer) => { data += chunk.toString() })
+      let byteCount = 0
+      req.on('data', (chunk: Buffer) => {
+        byteCount += chunk.length
+        if (byteCount > MAX_BODY_BYTES) {
+          reject(new Error('PAYLOAD_TOO_LARGE'))
+          req.destroy()
+          return
+        }
+        data += chunk.toString()
+      })
       req.on('end', () => resolve(data))
       req.on('error', reject)
     })
   } catch (err) {
+    if (err instanceof Error && err.message === 'PAYLOAD_TOO_LARGE') {
+      sendJson(res, 413, { error: 'Payload zu groß (max. 200 KB)', data: null })
+      return
+    }
     console.error('[generate] body read failed:', err)
     sendJson(res, 400, { error: 'Body konnte nicht gelesen werden', data: null })
     return
@@ -68,16 +142,23 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   let parsed: { text?: string }
   try {
     parsed = JSON.parse(body) as { text?: string }
-  } catch (err) {
-    console.error('[generate] JSON parse failed:', err)
+  } catch {
     sendJson(res, 400, { error: 'Ungültiges JSON', data: null })
     return
   }
 
   const { text } = parsed
   if (!text || typeof text !== 'string' || text.trim().length < 10) {
-    console.error('[generate] invalid text. len:', text?.length)
     sendJson(res, 400, { error: 'text ist erforderlich (min. 10 Zeichen)', data: null })
+    return
+  }
+
+  const wordCount = text.trim().split(/\s+/).length
+  if (wordCount < MIN_WORD_COUNT) {
+    sendJson(res, 400, {
+      error: `Text zu kurz – mindestens ${MIN_WORD_COUNT} Wörter benötigt, damit sinnvolle Lernfragen entstehen können.`,
+      data: null,
+    })
     return
   }
 
@@ -91,77 +172,90 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   try {
     let workingText = text
 
+    // Summarize very long texts first
     if (text.length > LONG_TEXT_THRESHOLD) {
-      console.error('[generate] long text, summarizing. len:', text.length)
+      console.log('[generate] long text, summarizing. len:', text.length)
       workingText = await callClaude(
         apiKey,
-        'Fasse Lerntexte zusammen. Antworte NUR mit der Zusammenfassung, kein anderer Text.',
-        `Fasse diesen Text auf maximal 3000 Zeichen zusammen. Behalte alle wichtigen Fakten und Definitionen.\n\n${text}`,
-        1500
+        'Du extrahierst Lerninhalte aus Texten. Antworte NUR mit der strukturierten Zusammenfassung, kein anderer Text.',
+        `Erstelle eine strukturierte Lernzusammenfassung dieses Textes (max. 3000 Zeichen). Behalte: alle Definitionen, Fachbegriffe, Zahlen/Daten, Ursache-Wirkungs-Zusammenhänge und zentrale Konzepte. Verwerfe: Einleitungen, Wiederholungen, Fülltext.\n\n${text}`,
+        1800
       )
     }
 
-    const generatePrompt = `Analysiere diesen Lerntext und antworte NUR mit diesem JSON-Objekt, kein anderer Text:
+    const generatePrompt = `Analysiere diesen Lerntext und antworte NUR mit diesem JSON-Objekt – kein anderer Text, keine Markdown-Backticks, kein Kommentar:
 {
-  "summary": "Zusammenfassung in 2 Sätzen auf Deutsch",
-  "key_concepts": ["Begriff1","Begriff2","Begriff3"],
+  "summary": "Kernaussage in 2 prägnanten Sätzen",
+  "key_concepts": ["Begriff1","Begriff2","Begriff3","Begriff4","Begriff5"],
   "difficulty_overall": 2,
   "multiple_choice": [
     {
-      "question": "Frage auf Deutsch?",
-      "correct": "Richtige Antwort",
-      "wrong": ["Falsch1","Falsch2","Falsch3"],
+      "question": "Frage, die echtes Verständnis prüft?",
+      "correct": "Korrekte Antwort (max. 8 Wörter)",
+      "wrong": ["Falschantwort A","Falschantwort B","Falschantwort C"],
       "difficulty": 1,
-      "explanation": "Warum diese Antwort richtig ist",
-      "variants": []
+      "explanation": "Warum ist diese Antwort richtig? (1 Satz)"
     }
   ],
   "true_false": [
-    { "statement": "Aussage über den Text", "is_true": true, "explanation": "Erklärung" }
+    { "statement": "Klare Aussage aus dem Text (max. 15 Wörter)", "is_true": true, "explanation": "Begründung (1 Satz)" }
   ],
   "memory_pairs": [
-    { "term": "Begriff max 4 Wörter", "definition": "Erklärung max 8 Wörter" }
+    { "term": "Fachbegriff (1–3 Wörter)", "definition": "Präzise Definition (3–8 Wörter)" }
   ],
   "fill_blanks": [
-    { "sentence": "Der ___ macht etwas.", "answer": "Begriff", "hint": "Kleiner Tipp" }
+    { "sentence": "Vollständiger Satz mit ___ als einzige Lücke.", "answer": "gesuchtes Wort", "hint": "Kategorie oder Anfangsbuchstabe" }
   ]
 }
-Erstelle GENAU:
-- 8 multiple_choice: 3x difficulty:1, 3x difficulty:2, 2x difficulty:3
-- 4 true_false
-- 4 memory_pairs
-- 4 fill_blanks
-Nur Fakten die direkt im Text stehen. Alles auf Deutsch.
+
+PFLICHTREGELN – jede Verletzung macht das Ergebnis unbrauchbar:
+1. Exakt: 8 multiple_choice (3× difficulty:1, 3× difficulty:2, 2× difficulty:3), 4 true_false, 4 memory_pairs, 4 fill_blanks
+2. Sprache der Fragen = Sprache des Textes (Deutsch wenn Text Deutsch ist, Englisch wenn Englisch usw.)
+3. Nur Fakten AUS dem Text – keine Allgemeinwissen-Fragen
+4. fill_blanks: Jeder "sentence"-Wert MUSS exakt einmal den Token ___ enthalten
+5. fill_blanks: "answer" ist das einzelne Wort/die Phrase die ___ ersetzt; der Satz muss ohne ___ grammatikalisch korrekt sein
+6. multiple_choice "wrong"-Antworten: gleiche syntaktische Form wie "correct", plausibel aber eindeutig falsch
+7. difficulty:1 = Direkte Fakten (Was? Wann? Wer?), difficulty:2 = Zusammenhänge (Warum? Wie?), difficulty:3 = Transfer/Analyse (Was würde passieren wenn...? Welcher Schluss folgt?)
+8. true_false-Statements: eindeutig wahr ODER eindeutig falsch – keine Graubereiche
+9. memory_pairs: Term und Definition müssen ein echtes Lernpaar bilden (Fachbegriff ↔ Bedeutung)
+10. "explanation" bei multiple_choice und true_false: erklär warum die Antwort stimmt, damit Lernende etwas mitnehmen
+
 TEXT:\n\n${workingText}`
 
-    const rawText = await callClaude(
-      apiKey,
-      'Du bist ein Lernexperte. Antworte IMMER nur als valides JSON-Objekt. Kein anderer Text, keine Backticks.',
-      generatePrompt,
-      4000
-    )
+    const systemPrompt = 'Du bist ein erfahrener Pädagoge und Didaktiker. Deine Aufgabe: Erstelle präzise, lehrreiche Lernfragen die echtes Verständnis statt bloßes Auswendiglernen fördern. Falschantworten müssen so formuliert sein dass nur wer den Stoff wirklich verstanden hat die richtige Antwort erkennt. Antworte AUSSCHLIESSLICH als valides JSON-Objekt ohne jeglichen anderen Text.'
 
-    const jsonMatch = rawText.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) {
-      console.error('[generate] no JSON object. raw:', rawText.slice(0, 300))
-      sendJson(res, 500, { error: 'Kein JSON in KI-Antwort', data: null })
-      return
+    // Helper: extract and validate JSON from a raw Claude response
+    function extractAndValidate(raw: string): unknown {
+      const jsonMatch = raw.match(/\{[\s\S]*\}/)
+      if (!jsonMatch) throw new Error('Kein JSON-Objekt in KI-Antwort gefunden')
+      const data = JSON.parse(jsonMatch[0]) as Record<string, unknown>
+      const valid =
+        Array.isArray(data?.multiple_choice) && (data.multiple_choice as unknown[]).length >= 8 &&
+        Array.isArray(data?.true_false)       && (data.true_false as unknown[]).length >= 4 &&
+        Array.isArray(data?.memory_pairs)     && (data.memory_pairs as unknown[]).length >= 4 &&
+        Array.isArray(data?.fill_blanks)      && (data.fill_blanks as unknown[]).length >= 4
+      if (!valid) throw new Error('KI-Schema unvollständig')
+      return data
     }
 
     let parsedData: unknown
-    try {
-      parsedData = JSON.parse(jsonMatch[0])
-    } catch (err) {
-      console.error('[generate] parse failed:', err)
-      sendJson(res, 500, { error: 'KI-Antwort nicht parsebar', data: null })
-      return
-    }
+    let rawText: string
 
-    const obj = parsedData as { multiple_choice?: unknown[] }
-    if (!Array.isArray(obj?.multiple_choice) || obj.multiple_choice.length === 0) {
-      console.error('[generate] invalid schema:', JSON.stringify(parsedData).slice(0, 300))
-      sendJson(res, 500, { error: 'KI-Schema ungültig', data: null })
-      return
+    try {
+      rawText = await callClaude(apiKey, systemPrompt, generatePrompt, 5000)
+      parsedData = extractAndValidate(rawText)
+    } catch (firstErr) {
+      // One retry – model occasionally produces incomplete or garbled output
+      console.warn('[generate] first attempt failed, retrying:', firstErr instanceof Error ? firstErr.message : firstErr)
+      try {
+        rawText = await callClaude(apiKey, systemPrompt, generatePrompt, 5000)
+        parsedData = extractAndValidate(rawText)
+      } catch (retryErr) {
+        const msg = retryErr instanceof Error ? retryErr.message : 'KI-Schema ungültig'
+        console.error('[generate] retry also failed:', msg)
+        sendJson(res, 500, { error: msg, data: null })
+        return
+      }
     }
 
     sendJson(res, 200, { error: null, data: parsedData })

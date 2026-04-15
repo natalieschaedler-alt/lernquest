@@ -38,6 +38,10 @@ export interface GameSession {
   score: number
   duration: number
   completed_at: string
+  world_theme?: string
+  boss_defeated?: boolean
+  questions_correct?: number
+  questions_total?: number
 }
 
 export interface Profile {
@@ -45,6 +49,14 @@ export interface Profile {
   name: string
   age?: number
   created_at: string
+  current_streak?: number
+  longest_streak?: number
+  last_active_date?: string
+  streak_freezes?: number
+  total_sessions?: number
+  selected_world_id?: string
+  weekly_xp?: number
+  weekly_reset_at?: string
 }
 
 export interface Mistake {

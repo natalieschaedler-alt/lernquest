@@ -10,6 +10,11 @@ export default {
         dark: '#1A1A2E',
         'dark-card': '#16213E',
         'dark-border': '#0F3460',
+        'dark-deep': '#0D0A1A',
+        'dark-elevated': '#2A2A3E',
+        streak: '#FFB400',
+        error: '#FF5050',
+        'error-light': '#FF9090',
       },
       fontFamily: {
         display: ['Fredoka One', 'cursive'],

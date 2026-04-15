@@ -1,6 +1,7 @@
 import md5 from 'md5'
 import { supabase } from '../lib/supabase'
 import { checkContent } from './contentFilter'
+import { shuffleArray } from './shuffleArray'
 import type { Question } from '../types'
 
 interface MCItem { question: string; correct: string; wrong: [string,string,string]; difficulty: number; explanation: string; variants: string[] }
@@ -17,20 +18,11 @@ interface GeneratedData {
   fill_blanks: FillItem[]
 }
 
-function shuffle<T>(arr: T[]): T[] {
-  const a = [...arr]
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]]
-  }
-  return a
-}
-
 function convertToQuestions(data: GeneratedData): Question[] {
   const questions: Question[] = []
 
   for (const mc of (data.multiple_choice ?? [])) {
-    const answers = shuffle([mc.correct, ...mc.wrong])
+    const answers = shuffleArray([mc.correct, ...mc.wrong])
     questions.push({
       question: mc.question,
       answers,
@@ -90,21 +82,32 @@ export async function generateQuestions(text: string): Promise<{ questions: Ques
     .from('worlds')
     .select('id, questions')
     .eq('content_hash', hash)
-    .single()
+    .maybeSingle()
 
   if (cached) {
     return { questions: cached.questions as Question[], worldId: cached.id as string, fromCache: true }
   }
 
+  // Attach auth token if the user is signed in
+  const { data: sessionData } = await supabase.auth.getSession()
+  const accessToken = sessionData?.session?.access_token
+
   const response = await fetch('/api/generate', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
     body: JSON.stringify({ text }),
   })
 
   if (!response.ok) {
-    const error = await response.json() as { error?: string }
-    throw new Error(`API Fehler: ${error.error ?? 'Unbekannter Fehler'}`)
+    let errMessage = 'Unbekannter Fehler'
+    try {
+      const errBody = await response.json() as { error?: string }
+      if (errBody.error) errMessage = errBody.error
+    } catch { /* non-JSON error body */ }
+    throw new Error(`API Fehler: ${errMessage}`)
   }
 
   const responseBody = await response.json() as { error: string | null, data: GeneratedData | null }
@@ -123,8 +126,8 @@ export async function generateQuestions(text: string): Promise<{ questions: Ques
   }
 
   const title = text.split(' ').slice(0, 5).join(' ') + '...'
-  const { data: currentUser } = await supabase.auth.getUser()
-  const userId = currentUser?.user?.id ?? null
+  // Re-use the session fetched above instead of a redundant getUser() call.
+  const userId = sessionData?.session?.user?.id ?? null
 
   const { data: saved, error: saveError } = await supabase
     .from('worlds')

@@ -1,7 +1,9 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
+import { useTranslation } from 'react-i18next'
 import type { Question } from '../../types'
 import { soundManager } from '../../utils/soundManager'
+import { shuffleArray } from '../../utils/shuffleArray'
 
 interface MemoryKartenProps {
   questions:    Question[]
@@ -28,15 +30,6 @@ const MIN_PAIRS = 3
 const MATCH_CONFIRM_DELAY = 300
 const MISMATCH_HIDE_DELAY = 900
 const POINTS_PER_PAIR = 20
-
-function shuffleArray<T>(arr: T[]): T[] {
-  const shuffled = [...arr]
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
-  }
-  return shuffled
-}
 
 function extractPairs(questions: Question[]): Pair[] {
   const memoryPairs: Pair[] = []
@@ -72,6 +65,7 @@ function buildCards(pairs: Pair[]): Card[] {
 }
 
 export default function MemoryKarten({ questions, primaryColor, onComplete }: MemoryKartenProps) {
+  const { t } = useTranslation()
   const pairs = useMemo(() => extractPairs(questions), [questions])
   const [cards, setCards] = useState<Card[]>(() => buildCards(pairs))
   const [flippedIds, setFlippedIds] = useState<string[]>([])
@@ -89,11 +83,12 @@ export default function MemoryKarten({ questions, primaryColor, onComplete }: Me
   }, [isComplete])
 
   // Completion-Check: alle gematcht?
+  // queueMicrotask defers setState out of the synchronous effect body (react-hooks/immutability)
   useEffect(() => {
     if (cards.length === 0 || completedRef.current) return
     if (cards.every((c) => c.isMatched)) {
       completedRef.current = true
-      setIsComplete(true)
+      queueMicrotask(() => setIsComplete(true))
     }
   }, [cards])
 
@@ -150,15 +145,15 @@ export default function MemoryKarten({ questions, primaryColor, onComplete }: Me
   if (pairs.length < MIN_PAIRS) {
     return (
       <div className="flex items-center justify-center min-h-[400px] text-white font-body">
-        <p className="text-center px-6">
-          Zu wenige Memory-Paare verfügbar. Mindestens {MIN_PAIRS} werden benötigt.
+        <p className="text-center px-6 text-gray-400">
+          {t('game.no_memory_pairs', { min: MIN_PAIRS })}
         </p>
       </div>
     )
   }
 
   return (
-    <div className="relative w-full min-h-[400px] bg-[#0D0A1A] rounded-2xl p-4 overflow-hidden">
+    <div className="relative w-full min-h-[400px] bg-dark-deep rounded-2xl p-4 overflow-hidden">
       {/* Header: Timer + Score */}
       <div className="flex justify-between items-center mb-4 px-2">
         <div className="flex items-center gap-2 text-white font-body font-semibold">
@@ -209,8 +204,8 @@ export default function MemoryKarten({ questions, primaryColor, onComplete }: Me
                     backfaceVisibility: 'hidden',
                     WebkitBackfaceVisibility: 'hidden',
                     transform: 'rotateY(180deg)',
-                    backgroundColor: '#1A1A2E',
-                    border: card.isMatched ? '2px solid #00C896' : '1px solid #2A2A3E',
+                    backgroundColor: '#1A1A2E', // = dark
+                    border: card.isMatched ? '2px solid #00C896' : '1px solid #2A2A3E', // secondary / dark-elevated
                     boxShadow: card.isMatched ? '0 0 15px rgba(0,200,150,0.5)' : '0 4px 15px rgba(0,0,0,0.3)',
                   }}
                 >
@@ -228,26 +223,26 @@ export default function MemoryKarten({ questions, primaryColor, onComplete }: Me
       <AnimatePresence>
         {isComplete && (
           <motion.div
-            className="absolute inset-0 flex items-center justify-center z-20 bg-[#0D0A1A]/90 backdrop-blur-sm rounded-2xl"
+            className="absolute inset-0 flex items-center justify-center z-20 bg-dark-deep/90 backdrop-blur-sm rounded-2xl"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.3 }}
           >
             <motion.div
-              className="flex flex-col items-center gap-4 px-8 py-6 rounded-2xl"
+              className="flex flex-col items-center gap-4 px-8 py-6 rounded-2xl bg-dark"
               initial={{ scale: 0.8, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               transition={{ delay: 0.1, duration: 0.4, ease: 'easeOut' }}
-              style={{ backgroundColor: '#1A1A2E', border: `2px solid ${primaryColor}` }}
+              style={{ border: `2px solid ${primaryColor}` }}
             >
               <span className="text-5xl">🎉</span>
               <h2 className="font-display text-2xl text-white text-center">
-                {pairs.length} Paare in {seconds} Sekunden!
+                {t('game.memory_complete', { pairs: pairs.length, seconds })}
               </h2>
               <div className="flex items-center gap-2 text-white font-body text-lg">
                 <span>⭐</span>
-                <span className="tabular-nums font-bold">{score} Punkte</span>
+                <span className="tabular-nums font-bold">{t('game.points', { score })}</span>
               </div>
               <button
                 type="button"
@@ -255,7 +250,7 @@ export default function MemoryKarten({ questions, primaryColor, onComplete }: Me
                 className="mt-2 px-6 py-3 rounded-xl text-white font-body font-bold cursor-pointer border-none"
                 style={{ backgroundColor: primaryColor, boxShadow: `0 4px 20px ${primaryColor}66` }}
               >
-                Weiter →
+                {t('game.continue')}
               </button>
             </motion.div>
           </motion.div>

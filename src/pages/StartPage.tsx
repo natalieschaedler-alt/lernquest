@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useState } from 'react'
 import { motion } from 'motion/react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
@@ -29,21 +29,20 @@ export default function StartPage() {
   const navigate = useNavigate()
   const streak = useGameStore((s) => s.streak)
 
-  const stars = useMemo<StarData[]>(
-    () =>
-      Array.from({ length: 60 }, (_, i) => ({
-        id: i,
-        top: `${Math.random() * 100}%`,
-        left: `${Math.random() * 100}%`,
-        size: Math.random() * 2 + 1,
-        duration: Math.random() * 4 + 2,
-        delay: Math.random() * 4,
-      })),
-    []
+  // useState lazy init: Math.random only called once, satisfies react-hooks/purity
+  const [stars] = useState<StarData[]>(() =>
+    Array.from({ length: 60 }, (_, i) => ({
+      id: i,
+      top: `${Math.random() * 100}%`,
+      left: `${Math.random() * 100}%`,
+      size: Math.random() * 2 + 1,
+      duration: Math.random() * 4 + 2,
+      delay: Math.random() * 4,
+    }))
   )
 
   return (
-    <div className="relative min-h-screen bg-dark overflow-hidden flex items-center justify-center">
+    <main className="relative min-h-screen bg-dark overflow-hidden flex items-center justify-center">
       {/* Stars */}
       {stars.map((star) => (
         <motion.div
@@ -166,6 +165,6 @@ export default function StartPage() {
       >
         {t('start.footer')}
       </p>
-    </div>
+    </main>
   )
 }

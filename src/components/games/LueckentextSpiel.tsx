@@ -1,7 +1,9 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
+import { useTranslation } from 'react-i18next'
 import type { Question } from '../../types'
 import { soundManager } from '../../utils/soundManager'
+import { shuffleArray } from '../../utils/shuffleArray'
 
 interface LueckentextSpielProps {
   questions:    Question[]
@@ -39,15 +41,6 @@ function extractItems(questions: Question[]): FillItem[] {
   return items
 }
 
-function shuffleArray<T>(arr: T[]): T[] {
-  const s = [...arr]
-  for (let i = s.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[s[i], s[j]] = [s[j], s[i]]
-  }
-  return s
-}
-
 function buildChoices(correct: string, allAnswers: string[]): string[] {
   const pool = allAnswers.filter((a) => a.toLowerCase().trim() !== correct.toLowerCase().trim())
   const distractors = shuffleArray(pool).slice(0, 3)
@@ -58,7 +51,7 @@ function buildChoices(correct: string, allAnswers: string[]): string[] {
 }
 
 function normalize(s: string): string {
-  return s.trim().toLowerCase()
+  return s.trim().toLowerCase().normalize('NFC')
 }
 
 function splitSentence(sentence: string): [string, string] {
@@ -68,6 +61,7 @@ function splitSentence(sentence: string): [string, string] {
 }
 
 export default function LueckentextSpiel({ questions, primaryColor, onComplete }: LueckentextSpielProps) {
+  const { t } = useTranslation()
   const items = useMemo(() => extractItems(questions), [questions])
   const allAnswers = useMemo(() => items.map((it) => it.answer), [items])
 
@@ -168,11 +162,28 @@ export default function LueckentextSpiel({ questions, primaryColor, onComplete }
     setTypedAnswer('')
   }, [feedback])
 
+  // Keyboard shortcuts: 1–4 select a choice in choose-mode; Enter submits in type-mode
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (feedback !== 'idle' || isComplete) return
+      if (mode === 'choose') {
+        const num = parseInt(e.key, 10)
+        if (num >= 1 && num <= choices.length) {
+          e.preventDefault()
+          handleChoiceClick(choices[num - 1])
+        }
+      }
+      // type-mode submit is already handled by the form's onSubmit
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [mode, feedback, isComplete, choices, handleChoiceClick])
+
   if (items.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-[400px] text-white font-body">
         <p className="text-center px-6">
-          Keine Lückentext-Fragen verfügbar.
+          {t('game.no_fill_blanks')}
         </p>
       </div>
     )
@@ -183,33 +194,33 @@ export default function LueckentextSpiel({ questions, primaryColor, onComplete }
     const accuracy = Math.round((correctCount / items.length) * 100)
     return (
       <motion.div
-        className="relative w-full min-h-[400px] bg-[#0D0A1A] rounded-2xl p-6 flex items-center justify-center"
+        className="relative w-full min-h-[400px] bg-dark-deep rounded-2xl p-6 flex items-center justify-center"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.4 }}
       >
         <motion.div
-          className="flex flex-col items-center gap-4 px-8 py-6 rounded-2xl max-w-sm"
+          className="flex flex-col items-center gap-4 px-8 py-6 rounded-2xl max-w-sm bg-dark"
           initial={{ scale: 0.8, y: 20 }}
           animate={{ scale: 1, y: 0 }}
           transition={{ delay: 0.1, duration: 0.4, ease: 'easeOut' }}
-          style={{ backgroundColor: '#1A1A2E', border: `2px solid ${primaryColor}` }}
+          style={{ border: `2px solid ${primaryColor}` }}
         >
           <span className="text-5xl">📝</span>
           <h2 className="font-display text-2xl text-white text-center">
-            Lückentext geschafft!
+            {t('game.fill_complete')}
           </h2>
           <div className="flex flex-col items-center gap-1 text-white font-body">
             <div className="flex items-center gap-2 text-lg">
               <span>⭐</span>
-              <span className="tabular-nums font-bold">{score} Punkte</span>
+              <span className="tabular-nums font-bold">{t('game.points', { score })}</span>
             </div>
             <div className="text-sm text-gray-300 tabular-nums">
-              {correctCount} / {items.length} richtig ({accuracy}%)
+              {t('game.fill_correct_count', { correct: correctCount, total: items.length, accuracy })}
             </div>
             {mistakes > 0 && (
               <div className="text-sm text-gray-400 tabular-nums">
-                {mistakes} {mistakes === 1 ? 'Fehler' : 'Fehler'}
+                {t('game.errors_count', { count: mistakes })}
               </div>
             )}
           </div>
@@ -219,7 +230,7 @@ export default function LueckentextSpiel({ questions, primaryColor, onComplete }
             className="mt-2 px-6 py-3 rounded-xl text-white font-body font-bold cursor-pointer border-none"
             style={{ backgroundColor: primaryColor, boxShadow: `0 4px 20px ${primaryColor}66` }}
           >
-            Weiter →
+            {t('game.continue')}
           </button>
         </motion.div>
       </motion.div>
@@ -246,7 +257,7 @@ export default function LueckentextSpiel({ questions, primaryColor, onComplete }
           }
 
   return (
-    <div className="relative w-full min-h-[400px] bg-[#0D0A1A] rounded-2xl p-4 overflow-hidden">
+    <div className="relative w-full min-h-[400px] bg-dark-deep rounded-2xl p-4 overflow-hidden">
       {/* Header: Progress + Score + Mode Toggle */}
       <div className="flex justify-between items-center mb-6 px-2 gap-2">
         <div className="flex items-center gap-3 text-white font-body font-semibold">
@@ -262,12 +273,10 @@ export default function LueckentextSpiel({ questions, primaryColor, onComplete }
           type="button"
           onClick={toggleMode}
           disabled={feedback !== 'idle'}
-          className="px-3 py-1.5 rounded-lg text-xs font-body font-semibold text-white border-none cursor-pointer disabled:opacity-50"
-          style={{
-            backgroundColor: mode === 'choose' ? '#2A2A3E' : primaryColor,
-          }}
+          className={`px-3 py-1.5 rounded-lg text-xs font-body font-semibold text-white border-none cursor-pointer disabled:opacity-50${mode === 'choose' ? ' bg-dark-elevated' : ''}`}
+          style={mode !== 'choose' ? { backgroundColor: primaryColor } : undefined}
         >
-          {mode === 'choose' ? '⌨️ Tippen' : '✅ Wählen'}
+          {mode === 'choose' ? t('game.type_mode') : t('game.choose_mode')}
         </button>
       </div>
 
@@ -335,7 +344,7 @@ export default function LueckentextSpiel({ questions, primaryColor, onComplete }
               disabled={hintUsed || feedback !== 'idle'}
               className="text-xs font-body text-gray-400 hover:text-white underline cursor-pointer bg-transparent border-none disabled:opacity-50 disabled:no-underline"
             >
-              💡 Hinweis zeigen (-{POINTS_HINT_PENALTY} Punkte)
+              {t('game.hint_btn', { penalty: POINTS_HINT_PENALTY })}
             </button>
           ) : (
             <motion.div
@@ -366,22 +375,18 @@ export default function LueckentextSpiel({ questions, primaryColor, onComplete }
                 disabled={feedback !== 'idle'}
                 whileTap={feedback === 'idle' ? { scale: 0.96 } : undefined}
                 whileHover={feedback === 'idle' ? { scale: 1.02 } : undefined}
-                className="px-3 py-3 rounded-xl text-white font-body font-semibold cursor-pointer border-none text-sm leading-tight disabled:cursor-default"
-                style={{
-                  backgroundColor:
-                    feedback !== 'idle' && isCorrectChoice
-                      ? 'rgba(0, 200, 150, 0.3)'
-                      : isWrongChoice
-                        ? 'rgba(255, 80, 80, 0.15)'
-                        : '#1A1A2E',
-                  border:
-                    feedback !== 'idle' && isCorrectChoice
-                      ? '2px solid #00C896'
-                      : '1px solid #2A2A3E',
-                  opacity: feedback !== 'idle' && !isCorrectChoice ? 0.5 : 1,
-                }}
+                className={`px-3 py-3 rounded-xl text-white font-body font-semibold cursor-pointer border-none text-sm leading-tight disabled:cursor-default flex flex-col items-center gap-0.5 ${
+                  feedback !== 'idle' && isCorrectChoice
+                    ? 'bg-secondary/30 border-2 border-secondary'
+                    : isWrongChoice
+                      ? 'bg-error/15 border border-dark-elevated'
+                      : 'bg-dark border border-dark-elevated'
+                } ${feedback !== 'idle' && !isCorrectChoice ? 'opacity-50' : ''}`}
               >
-                {choice}
+                <span>{choice}</span>
+                {feedback === 'idle' && (
+                  <span className="text-[9px] opacity-40">[{i + 1}]</span>
+                )}
               </motion.button>
             )
           })}
@@ -395,7 +400,7 @@ export default function LueckentextSpiel({ questions, primaryColor, onComplete }
             className="px-6 py-3 rounded-xl text-white font-body font-bold cursor-pointer border-none disabled:opacity-40"
             style={{ backgroundColor: primaryColor, boxShadow: `0 4px 15px ${primaryColor}55` }}
           >
-            Bestätigen
+            {t('game.confirm')}
           </button>
         </div>
       )}
@@ -413,7 +418,7 @@ export default function LueckentextSpiel({ questions, primaryColor, onComplete }
               className="font-display text-base"
               style={{ color: feedback === 'correct' ? '#00C896' : '#FF6B6B' }}
             >
-              {feedback === 'correct' ? '✨ Richtig!' : `Richtig wäre: ${current.answer}`}
+              {feedback === 'correct' ? t('game.correct_simple') : t('game.correct_answer_was', { answer: current.answer })}
             </span>
           </motion.div>
         )}

@@ -1,14 +1,8 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { motion } from 'motion/react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useGameStore } from '../stores/gameStore'
-
-const MOTIVATION_QUOTES = [
-  'Jeder Meister war einmal ein Anfänger. 🌱',
-  'Fehler sind Schritte auf dem Weg zum Erfolg. 🚀',
-  'Gib nicht auf – du bist näher als du denkst. ⭐',
-]
 
 export default function GameOverPage() {
   const navigate = useNavigate()
@@ -16,24 +10,24 @@ export default function GameOverPage() {
 
   const score = useGameStore((s) => s.score)
   const questions = useGameStore((s) => s.questions)
-  const currentQuestionIndex = useGameStore((s) => s.currentQuestionIndex)
   const resetGame = useGameStore((s) => s.resetGame)
 
-  const quote = useMemo(
-    () => MOTIVATION_QUOTES[Math.floor(Math.random() * MOTIVATION_QUOTES.length)],
-    [],
-  )
+  // useState lazy init: Math.random only called once, satisfies react-hooks/purity
+  const [quoteIndex] = useState(() => Math.floor(Math.random() * 3))
+  const quote = useMemo(() => t(`gameover.quote_${quoteIndex}`), [t, quoteIndex])
 
-  // Find the last 3 correctly answered questions (approximation: questions before current index)
+  // Show the first 3 non-memory questions the player faced in this run.
+  // currentQuestionIndex is not reliably updated mid-game, so we show from the start.
   const learnedQuestions = useMemo(() => {
-    const answered = questions.slice(0, currentQuestionIndex)
-    return answered.slice(-3)
-  }, [questions, currentQuestionIndex])
+    return questions
+      .filter((q) => q.question_type !== 'memory')
+      .slice(0, 3)
+  }, [questions])
 
   const stagger = 0.2
 
   return (
-    <div
+    <main
       className="min-h-screen text-white flex flex-col items-center justify-center px-6 relative overflow-hidden"
       style={{
         background: 'linear-gradient(180deg, #2D1117 0%, #1A1A2E 50%, #1A1A2E 100%)',
@@ -108,7 +102,7 @@ export default function GameOverPage() {
 
       {/* Buttons */}
       <motion.div
-        className="flex gap-4 mt-8"
+        className="flex flex-wrap justify-center gap-4 mt-8"
         initial={{ y: 20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ delay: stagger * 5 }}
@@ -118,7 +112,7 @@ export default function GameOverPage() {
             resetGame()
             navigate('/dungeon', { replace: true })
           }}
-          className="font-body font-bold text-white cursor-pointer border-none"
+          className="font-body font-bold text-white cursor-pointer border-none whitespace-nowrap"
           style={{ fontSize: '16px', background: '#6C3CE1', padding: '14px 28px', borderRadius: '50px' }}
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
@@ -131,7 +125,7 @@ export default function GameOverPage() {
             resetGame()
             navigate('/onboarding', { replace: true })
           }}
-          className="font-body font-bold text-white cursor-pointer border border-dark-border"
+          className="font-body font-bold text-white cursor-pointer border border-dark-border whitespace-nowrap"
           style={{ fontSize: '16px', background: 'transparent', padding: '14px 28px', borderRadius: '50px' }}
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
@@ -139,6 +133,6 @@ export default function GameOverPage() {
           {t('gameover.new_world')}
         </motion.button>
       </motion.div>
-    </div>
+    </main>
   )
 }

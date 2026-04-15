@@ -3,20 +3,18 @@ import { motion, AnimatePresence } from 'motion/react'
 import { useTranslation } from 'react-i18next'
 import type { Question } from '../../types'
 import { soundManager } from '../../utils/soundManager'
+import { pointsForDifficulty, TIMER, COMBO } from '../../lib/gameConfig'
+import { shuffleArray } from '../../utils/shuffleArray'
 
 // ── Constants ──
-const TIMER_DURATION = 30
-const TIMER_WARN_THRESHOLD = 10
 const BUBBLE_MIN_SIZE = 85
 const BUBBLE_COLORS = ['#2D1B69', '#1B3A2D', '#3A1B2D', '#1B2D3A', '#2D2A1B', '#1B1B3A']
 const FAKE_LABELS = ['🌟 Wähle weise...', '❓ Nicht sicher?']
 const FLOAT_DURATION_MIN = 3
 const FLOAT_DURATION_MAX = 6
 const SHAKE_KEYFRAMES = [0, -10, 10, -10, 0]
-const COMBO_BONUS_X2 = 5
-const COMBO_BONUS_X3 = 10
 
-interface WortswirbelProps {
+interface WortwirbelProps {
   question: Question
   onAnswer: (correct: boolean, points: number) => void
 }
@@ -25,7 +23,10 @@ interface Bubble {
   id: number
   text: string
   type: 'answer' | 'fake'
+  /** Index in question.answers (null for fake bubbles). */
   answerIndex: number | null
+  /** 1-based keyboard shortcut for this bubble (null for fake bubbles). */
+  keyHint: number | null
   color: string
   x: number
   y: number
@@ -38,20 +39,7 @@ function randomBetween(min: number, max: number): number {
   return Math.random() * (max - min) + min
 }
 
-function shuffleArray<T>(arr: T[]): T[] {
-  const shuffled = [...arr]
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
-  }
-  return shuffled
-}
-
-function pointsForDifficulty(difficulty: 1 | 2 | 3): number {
-  return difficulty === 3 ? 30 : difficulty === 2 ? 20 : 10
-}
-
-export default function Wortwirbel({ question, onAnswer }: WortswirbelProps) {
+export default function Wortwirbel({ question, onAnswer }: WortwirbelProps) {
   const { t } = useTranslation()
 
   const [answered, setAnswered] = useState(false)
@@ -60,7 +48,7 @@ export default function Wortwirbel({ question, onAnswer }: WortswirbelProps) {
   const [comboCount, setComboCount] = useState(0)
   const [showCombo, setShowCombo] = useState(false)
   const [showTrap, setShowTrap] = useState(false)
-  const [timeLeft, setTimeLeft] = useState(TIMER_DURATION)
+  const [timeLeft, setTimeLeft] = useState<number>(TIMER.WORTWIRBEL)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const answeredRef = useRef(false)
 
@@ -78,6 +66,7 @@ export default function Wortwirbel({ question, onAnswer }: WortswirbelProps) {
       text,
       type: 'answer' as const,
       answerIndex: i,
+      keyHint: i + 1,  // keys 1–4
       x: shuffledPositions[i].x + randomBetween(-5, 5),
       y: shuffledPositions[i].y + randomBetween(-5, 5),
       floatDuration: randomBetween(FLOAT_DURATION_MIN, FLOAT_DURATION_MAX),
@@ -90,6 +79,7 @@ export default function Wortwirbel({ question, onAnswer }: WortswirbelProps) {
       text,
       type: 'fake' as const,
       answerIndex: null,
+      keyHint: null,
       x: shuffledPositions[question.answers.length + i].x + randomBetween(-5, 5),
       y: shuffledPositions[question.answers.length + i].y + randomBetween(-5, 5),
       floatDuration: randomBetween(FLOAT_DURATION_MIN, FLOAT_DURATION_MAX),
@@ -105,7 +95,7 @@ export default function Wortwirbel({ question, onAnswer }: WortswirbelProps) {
   // Timer
   useEffect(() => {
     answeredRef.current = false
-    setTimeLeft(TIMER_DURATION)
+    const resetId = setTimeout(() => setTimeLeft(TIMER.WORTWIRBEL as number), 0)
 
     timerRef.current = setInterval(() => {
       setTimeLeft((prev) => {
@@ -124,6 +114,7 @@ export default function Wortwirbel({ question, onAnswer }: WortswirbelProps) {
     }, 1000)
 
     return () => {
+      clearTimeout(resetId)
       if (timerRef.current) clearInterval(timerRef.current)
     }
   }, [question, onAnswer])
@@ -156,10 +147,13 @@ export default function Wortwirbel({ question, onAnswer }: WortswirbelProps) {
 
         const basePoints = pointsForDifficulty(question.difficulty)
         const bonus =
-          newCombo >= 3 ? COMBO_BONUS_X3 : newCombo >= 2 ? COMBO_BONUS_X2 : 0
+          newCombo >= COMBO.THRESHOLD_HIGH ? COMBO.BONUS_HIGH
+          : newCombo >= COMBO.THRESHOLD_LOW ? COMBO.BONUS_LOW
+          : 0
         const totalPoints = basePoints + bonus
 
-        if (newCombo >= 3) {
+        if (newCombo >= COMBO.THRESHOLD_HIGH) {
+          soundManager.playCombo()
           setShowCombo(true)
           setTimeout(() => setShowCombo(false), 1200)
         }
@@ -174,14 +168,31 @@ export default function Wortwirbel({ question, onAnswer }: WortswirbelProps) {
     [answered, question, comboCount, onAnswer],
   )
 
+  // Keyboard shortcuts: 1/2/3/4 select answer bubble by answerIndex
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (answered) return
+      const key = e.key
+      if (key < '1' || key > '4') return
+      const targetIndex = parseInt(key, 10) - 1  // 0-based answerIndex
+      const bubble = bubbles.find((b) => b.answerIndex === targetIndex)
+      if (bubble) {
+        e.preventDefault()
+        handleBubbleClick(bubble)
+      }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [answered, bubbles, handleBubbleClick])
+
   // Timer SVG values
   const timerRadius = 20
   const timerCircumference = 2 * Math.PI * timerRadius
-  const timerOffset = timerCircumference * (1 - timeLeft / TIMER_DURATION)
-  const timerColor = timeLeft <= TIMER_WARN_THRESHOLD ? '#FF6B35' : '#00C896'
+  const timerOffset = timerCircumference * (1 - timeLeft / TIMER.WORTWIRBEL)
+  const timerColor = timeLeft <= TIMER.WORTWIRBEL_WARN ? '#FF6B35' : '#00C896'
 
   return (
-    <div className="relative w-full h-full min-h-[400px] overflow-hidden rounded-2xl bg-[#0D0A1A]">
+    <div className="relative w-full h-full min-h-[400px] overflow-hidden rounded-2xl bg-dark-deep">
       {/* Subtle particle background */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         {Array.from({ length: 15 }).map((_, i) => (
@@ -206,9 +217,9 @@ export default function Wortwirbel({ question, onAnswer }: WortswirbelProps) {
         ))}
       </div>
 
-      {/* Timer */}
+      {/* Timer – decorative; screen readers get the live countdown via aria-live below */}
       <div className="absolute top-4 right-4 z-10">
-        <svg width="50" height="50" viewBox="0 0 50 50">
+        <svg width="50" height="50" viewBox="0 0 50 50" aria-hidden="true">
           <circle
             cx="25"
             cy="25"
@@ -245,6 +256,11 @@ export default function Wortwirbel({ question, onAnswer }: WortswirbelProps) {
         </svg>
       </div>
 
+      {/* Keyboard hint */}
+      <div className="absolute top-4 left-4 z-10">
+        <span className="text-[10px] text-gray-600 font-body">1–4</span>
+      </div>
+
       {/* Question */}
       <motion.h2
         className="relative z-10 text-center text-white font-body font-bold text-xl px-6 pt-6 pb-2 leading-relaxed line-clamp-3"
@@ -256,10 +272,9 @@ export default function Wortwirbel({ question, onAnswer }: WortswirbelProps) {
       </motion.h2>
 
       {/* Bubbles */}
-      <div className="relative w-full h-[300px] mt-2">
+      <div className="relative w-full h-[260px] mt-2">
         {bubbles.map((bubble) => {
           const isSelected = selectedId === bubble.id
-          // Determine animation state after answer
           let animateProps: Record<string, unknown> = {
             x: [0, bubble.floatOffsetX, 0],
             y: [0, bubble.floatOffsetY, 0],
@@ -273,15 +288,12 @@ export default function Wortwirbel({ question, onAnswer }: WortswirbelProps) {
 
           if (answered) {
             if (isSelected && isCorrect) {
-              // Correct: burst and vanish
               animateProps = { scale: [1, 1.5, 0], opacity: [1, 1, 0] }
               transitionProps = { duration: 0.5, ease: 'easeOut' }
             } else if (isSelected && !isCorrect) {
-              // Wrong: shake red
               animateProps = { x: SHAKE_KEYFRAMES }
               transitionProps = { duration: 0.4, ease: 'easeInOut' }
             } else {
-              // Other bubbles fade out
               animateProps = { opacity: 0 }
               transitionProps = { duration: 0.4 }
             }
@@ -290,7 +302,7 @@ export default function Wortwirbel({ question, onAnswer }: WortswirbelProps) {
           return (
             <motion.button
               key={bubble.id}
-              className="absolute flex items-center justify-center rounded-full border-none cursor-pointer"
+              className="absolute flex flex-col items-center justify-center rounded-full border-none cursor-pointer"
               style={{
                 width: BUBBLE_MIN_SIZE,
                 height: BUBBLE_MIN_SIZE,
@@ -311,12 +323,44 @@ export default function Wortwirbel({ question, onAnswer }: WortswirbelProps) {
               onClick={() => handleBubbleClick(bubble)}
               disabled={answered}
             >
+              {bubble.keyHint !== null && (
+                <span className="text-white/40 text-[9px] font-body leading-none mb-0.5">
+                  [{bubble.keyHint}]
+                </span>
+              )}
               <span className="text-white text-[11px] font-body font-semibold text-center px-2 leading-tight">
                 {bubble.text}
               </span>
             </motion.button>
           )
         })}
+      </div>
+
+      {/* Explanation panel – shown after answering if the question has one */}
+      <AnimatePresence>
+        {answered && question.explanation && (
+          <motion.div
+            className="absolute bottom-0 left-0 right-0 z-20 bg-dark-card/95 backdrop-blur-sm rounded-b-2xl px-4 py-3 border-t border-dark-border"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.35, ease: 'easeOut' }}
+          >
+            <p className="text-[11px] text-gray-300 font-body leading-snug">
+              <span className="text-secondary mr-1">💡</span>
+              {question.explanation}
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Live region */}
+      <div aria-live="polite" aria-atomic="true" className="sr-only">
+        {timeLeft === 0 && t('game.time_up')}
+        {answered && isCorrect === true && t('game.correct_simple')}
+        {answered && isCorrect === false && !showTrap && t('game.wrong_simple')}
+        {showTrap && t('game.trap')}
+        {showCombo && t('game.combo', { count: comboCount })}
       </div>
 
       {/* Combo overlay */}
@@ -346,7 +390,7 @@ export default function Wortwirbel({ question, onAnswer }: WortswirbelProps) {
             exit={{ opacity: 0 }}
           >
             <span className="font-body text-accent text-sm font-bold bg-dark-card/90 px-4 py-2 rounded-full">
-              Das war eine Falle! 😄
+              {t('game.trap')}
             </span>
           </motion.div>
         )}

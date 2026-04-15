@@ -48,12 +48,11 @@ const slideVariants = {
 async function extractTextFromPdf(file: File): Promise<string> {
   // Dynamic import to keep initial bundle small
   const pdfjsLib = await import('pdfjs-dist')
+  // ?url suffix makes Vite emit the worker as a hashed static asset and
+  // return the final URL — works in dev and prod, on all browsers.
+  const workerUrl = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default
 
-  // Set the worker source – Vite resolves this to a separate chunk
-  pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-    'pdfjs-dist/build/pdf.worker.min.mjs',
-    import.meta.url,
-  ).toString()
+  pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
 
   const buffer = await file.arrayBuffer()
 
@@ -63,6 +62,7 @@ async function extractTextFromPdf(file: File): Promise<string> {
       data: new Uint8Array(buffer),
       disableFontFace: true,
       useSystemFonts: false,
+      isEvalSupported: false,
     }).promise
   } catch (err) {
     const detail = err instanceof Error ? err.message : 'unknown'

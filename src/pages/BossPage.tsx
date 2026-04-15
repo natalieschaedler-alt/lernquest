@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useGameStore } from '../stores/gameStore'
 import { getWorldById } from '../data/worlds'
@@ -9,6 +10,15 @@ export default function BossPage() {
   const addXP = useGameStore((s) => s.addXP)
   const selectedWorldId = useGameStore((s) => s.selectedWorldId)
   const worldTheme = getWorldById(selectedWorldId)
+
+  // Guard: keine Fragen (z.B. direkter Aufruf von /boss) → zurück zum Onboarding
+  useEffect(() => {
+    if (questions.length === 0) {
+      navigate('/onboarding', { replace: true })
+    }
+  }, [questions.length, navigate])
+
+  if (questions.length === 0) return null
 
   return (
     <div className="min-h-screen bg-dark text-white flex items-center justify-center p-4">

@@ -1,64 +1,79 @@
 import md5 from 'md5'
 import { supabase } from '../lib/supabase'
 import { checkContent } from './contentFilter'
-import type { Question, GeneratedQuestionsResponse } from '../types'
+import type { Question } from '../types'
 
-function convertToQuestions(data: GeneratedQuestionsResponse): Question[] {
+interface MCItem { question: string; correct: string; wrong: [string,string,string]; difficulty: number; explanation: string; variants: string[] }
+interface TFItem { statement: string; is_true: boolean; explanation: string }
+interface MemoryItem { term: string; definition: string }
+interface FillItem { sentence: string; answer: string; hint: string }
+interface GeneratedData {
+  summary: string
+  key_concepts: string[]
+  difficulty_overall: number
+  multiple_choice: MCItem[]
+  true_false: TFItem[]
+  memory_pairs: MemoryItem[]
+  fill_blanks: FillItem[]
+}
+
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr]
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]]
+  }
+  return a
+}
+
+function convertToQuestions(data: GeneratedData): Question[] {
   const questions: Question[] = []
 
-  // Multiple Choice
-  for (const mc of data.multiple_choice) {
-    const answers = [mc.correct, ...mc.wrong]
-    for (let i = answers.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1))
-      ;[answers[i], answers[j]] = [answers[j], answers[i]]
-    }
+  for (const mc of (data.multiple_choice ?? [])) {
+    const answers = shuffle([mc.correct, ...mc.wrong])
     questions.push({
-      question:      mc.question,
+      question: mc.question,
       answers,
-      correctIndex:  answers.indexOf(mc.correct),
-      difficulty:    mc.difficulty as 1 | 2 | 3,
+      correctIndex: answers.indexOf(mc.correct),
+      difficulty: (mc.difficulty as 1|2|3) ?? 2,
       question_type: 'mc',
-      explanation:   mc.explanation,
-      variants:      mc.variants,
+      explanation: mc.explanation,
+      variants: mc.variants ?? [],
     })
   }
 
-  // True/False
-  for (const tf of data.true_false) {
+  for (const tf of (data.true_false ?? [])) {
     questions.push({
-      question:      tf.statement,
-      answers:       ['Wahr', 'Falsch'],
-      correctIndex:  tf.is_true ? 0 : 1,
-      difficulty:    2,
+      question: tf.statement,
+      answers: ['Wahr', 'Falsch'],
+      correctIndex: tf.is_true ? 0 : 1,
+      difficulty: 2,
       question_type: 'tf',
-      explanation:   tf.explanation,
+      explanation: tf.explanation,
     })
   }
 
-  // Memory Pairs
-  for (const mp of data.memory_pairs) {
+  for (const mp of (data.memory_pairs ?? [])) {
     questions.push({
-      question:          mp.term,
-      answers:           [mp.definition, '', '', ''],
-      correctIndex:      0,
-      difficulty:        2,
-      question_type:     'memory',
-      memory_term:       mp.term,
+      question: mp.term,
+      answers: [mp.definition, '', '', ''],
+      correctIndex: 0,
+      difficulty: 1,
+      question_type: 'memory',
+      memory_term: mp.term,
       memory_definition: mp.definition,
     })
   }
 
-  // Fill Blanks
-  for (const fb of data.fill_blanks) {
+  for (const fb of (data.fill_blanks ?? [])) {
     questions.push({
-      question:         fb.sentence,
-      answers:          [fb.answer, '', '', ''],
-      correctIndex:     0,
-      difficulty:       2,
-      question_type:    'fillblank',
+      question: fb.sentence,
+      answers: [fb.answer, '', '', ''],
+      correctIndex: 0,
+      difficulty: 2,
+      question_type: 'fillblank',
       fillblank_answer: fb.answer,
-      fillblank_hint:   fb.hint,
+      fillblank_hint: fb.hint,
     })
   }
 
@@ -66,14 +81,11 @@ function convertToQuestions(data: GeneratedQuestionsResponse): Question[] {
 }
 
 export async function generateQuestions(text: string): Promise<{ questions: Question[], worldId: string, fromCache: boolean }> {
-  // 1. Content prüfen
   const check = checkContent(text)
   if (!check.safe) throw new Error(check.reason)
 
-  // 2. Hash berechnen
   const hash = md5(text.trim().toLowerCase())
 
-  // 3. Cache prüfen
   const { data: cached } = await supabase
     .from('worlds')
     .select('id, questions')
@@ -84,8 +96,6 @@ export async function generateQuestions(text: string): Promise<{ questions: Ques
     return { questions: cached.questions as Question[], worldId: cached.id as string, fromCache: true }
   }
 
-  // 4. API aufrufen – über den sicheren Backend-Proxy (api/generate.ts)
-  // Der Anthropic-Key liegt damit NUR auf dem Server, nie im Browser!
   const response = await fetch('/api/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -97,17 +107,21 @@ export async function generateQuestions(text: string): Promise<{ questions: Ques
     throw new Error(`API Fehler: ${error.error ?? 'Unbekannter Fehler'}`)
   }
 
-  // 5. JSON parsen – neues Schema: { error, data: GeneratedQuestionsResponse | null }
-  const responseData = (await response.json() as { data: GeneratedQuestionsResponse | null }).data
-  if (!responseData || !responseData.multiple_choice) {
-    throw new Error(`KI-Antwort ungültig: ${JSON.stringify(responseData)}`)
-  }
-  const questions = convertToQuestions(responseData)
-  if (questions.length === 0) {
-    throw new Error('Fehler beim Verarbeiten der KI-Antwort. Bitte versuche es nochmal.')
+  const responseBody = await response.json() as { error: string | null, data: GeneratedData | null }
+
+  if (responseBody.error || !responseBody.data) {
+    throw new Error(responseBody.error ?? 'Leere KI-Antwort')
   }
 
-  // 6. In Supabase speichern (optional – schlägt für Gäste still fehl)
+  if (!responseBody.data.multiple_choice || responseBody.data.multiple_choice.length === 0) {
+    throw new Error('KI hat keine Fragen generiert')
+  }
+
+  const questions = convertToQuestions(responseBody.data)
+  if (questions.length === 0) {
+    throw new Error('Fehler beim Verarbeiten der KI-Antwort')
+  }
+
   const title = text.split(' ').slice(0, 5).join(' ') + '...'
   const { data: currentUser } = await supabase.auth.getUser()
   const userId = currentUser?.user?.id ?? null
@@ -118,11 +132,8 @@ export async function generateQuestions(text: string): Promise<{ questions: Ques
     .select('id')
     .single()
 
-  // Für Gäste (kein user_id) wird der Speicherversuch übersprungen –
-  // wir generieren eine lokale ID damit der Spielfluss weitergeht.
   if (saveError || !saved) {
-    const localWorldId = `local-${hash.slice(0, 8)}`
-    return { questions, worldId: localWorldId, fromCache: false }
+    return { questions, worldId: `local-${hash.slice(0, 8)}`, fromCache: false }
   }
 
   return { questions, worldId: (saved as { id: string }).id, fromCache: false }

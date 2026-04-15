@@ -1,61 +1,9 @@
-// Vercel Serverless Function – schützt den Anthropic API-Key vor dem Browser
-// Liegt auf dem Server, der Key ist NIE im Frontend-Bundle sichtbar!
-// Vercel erkennt Dateien in /api/ automatisch als Serverless Functions.
-
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 const MODEL = 'claude-haiku-4-5-20251001'
 const LONG_TEXT_THRESHOLD = 6000
 
-const SYSTEM_PROMPT = `Du bist ein Lernexperte für Schüler (10-18 Jahre) in Deutschland.
-Analysiere Lerntexte und erstelle strukturiertes Lernmaterial.
-Antworte IMMER nur als valides JSON-Objekt. Kein anderer Text, keine Backticks, keine Erklärungen.`
-
-const SUMMARIZE_SYSTEM_PROMPT = `Du fasst Lerntexte zusammen. Antworte NUR mit der Zusammenfassung.`
-
-function buildGeneratePrompt(text: string): string {
-  return `Analysiere diesen Lerntext und antworte NUR mit diesem JSON:
-{
-  "summary": "Zusammenfassung in genau 2 Sätzen",
-  "key_concepts": ["Begriff1","Begriff2","Begriff3"],
-  "difficulty_overall": 2,
-  "multiple_choice": [
-    {
-      "question": "Frage?",
-      "correct": "Richtige Antwort",
-      "wrong": ["Falsch1","Falsch2","Falsch3"],
-      "difficulty": 1,
-      "explanation": "Warum diese Antwort richtig ist",
-      "variants": []
-    }
-  ],
-  "true_false": [
-    {
-      "statement": "Aussage über den Text",
-      "is_true": true,
-      "explanation": "Erklärung"
-    }
-  ],
-  "memory_pairs": [
-    { "term": "Begriff", "definition": "Kurze Erklärung" }
-  ],
-  "fill_blanks": [
-    {
-      "sentence": "Der ___ wandelt Licht in Energie um.",
-      "answer": "Chlorophyll",
-      "hint": "Grüner Farbstoff"
-    }
-  ]
-}
-Erstelle genau: 10 multiple_choice (Mix difficulty 1/2/3), 5 true_false, 5 memory_pairs, 5 fill_blanks.
-TEXT:\n\n${text}`
-}
-
-function buildSummarizePrompt(text: string): string {
-  return `Fasse zusammen auf max 3000 Zeichen. Behalte alle wichtigen Fakten, Definitionen, Daten. NUR die Zusammenfassung, kein anderer Text.\n\nTEXT:\n\n${text}`
-}
-
-function sendJson(res: ServerResponse, status: number, payload: { error: string | null; data: unknown }) {
+function sendJson(res: ServerResponse, status: number, payload: unknown) {
   res.writeHead(status, { 'Content-Type': 'application/json' })
   res.end(JSON.stringify(payload))
 }
@@ -75,27 +23,15 @@ async function callClaude(apiKey: string, system: string, userMessage: string, m
       messages: [{ role: 'user', content: userMessage }],
     }),
   })
-
   if (!response.ok) {
     const errBody = await response.text()
-    console.error('[generate] Claude API non-OK. status:', response.status, 'body:', errBody)
-    let message = 'Claude API Fehler'
-    try {
-      const parsedErr = JSON.parse(errBody) as { error?: { message?: string } }
-      message = parsedErr.error?.message ?? message
-    } catch {
-      // non-JSON error body – keep default
-    }
-    throw new Error(message)
+    console.error('[generate] Claude non-OK:', response.status, errBody.slice(0, 300))
+    throw new Error('Claude API Fehler: ' + response.status)
   }
-
-  const claudeResponse = await response.json() as { content?: Array<{ text?: string }> }
-  const rawText = claudeResponse.content?.[0]?.text?.trim()
-  if (!rawText) {
-    console.error('[generate] empty Claude content:', JSON.stringify(claudeResponse).slice(0, 500))
-    throw new Error('Leere KI-Antwort')
-  }
-  return rawText
+  const data = await response.json() as { content?: Array<{ text?: string }> }
+  const text = data.content?.[0]?.text?.trim()
+  if (!text) throw new Error('Leere KI-Antwort')
+  return text
 }
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
@@ -133,76 +69,105 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   try {
     parsed = JSON.parse(body) as { text?: string }
   } catch (err) {
-    console.error('[generate] JSON parse failed. body:', body, 'err:', err)
+    console.error('[generate] JSON parse failed:', err)
     sendJson(res, 400, { error: 'Ungültiges JSON', data: null })
     return
   }
 
   const { text } = parsed
   if (!text || typeof text !== 'string' || text.trim().length < 10) {
-    console.error('[generate] invalid text. len:', text?.length, 'type:', typeof text)
+    console.error('[generate] invalid text. len:', text?.length)
     sendJson(res, 400, { error: 'text ist erforderlich (min. 10 Zeichen)', data: null })
     return
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
-    console.error('[generate] ANTHROPIC_API_KEY missing in env')
+    console.error('[generate] ANTHROPIC_API_KEY missing')
     sendJson(res, 500, { error: 'API Key nicht konfiguriert', data: null })
     return
   }
 
   try {
-    // 1. Long-Text-Vorverarbeitung: > 6000 Zeichen → zuerst zusammenfassen
     let workingText = text
+
     if (text.length > LONG_TEXT_THRESHOLD) {
-      try {
-        workingText = await callClaude(apiKey, SUMMARIZE_SYSTEM_PROMPT, buildSummarizePrompt(text), 1500)
-      } catch (err) {
-        console.error('[generate] summarization failed:', err)
-        sendJson(res, 500, { error: 'Zusammenfassung fehlgeschlagen', data: null })
-        return
-      }
+      console.error('[generate] long text, summarizing. len:', text.length)
+      workingText = await callClaude(
+        apiKey,
+        'Fasse Lerntexte zusammen. Antworte NUR mit der Zusammenfassung, kein anderer Text.',
+        `Fasse diesen Text auf maximal 3000 Zeichen zusammen. Behalte alle wichtigen Fakten und Definitionen.\n\n${text}`,
+        1500
+      )
     }
 
-    // 2. Fragen generieren (Haiku 4.5, 4000 tokens, volles Schema)
-    let rawText: string
-    try {
-      rawText = await callClaude(apiKey, SYSTEM_PROMPT, buildGeneratePrompt(workingText), 4000)
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Claude API Fehler'
-      sendJson(res, 502, { error: message, data: null })
-      return
+    const generatePrompt = `Analysiere diesen Lerntext und antworte NUR mit diesem JSON-Objekt, kein anderer Text:
+{
+  "summary": "Zusammenfassung in 2 Sätzen auf Deutsch",
+  "key_concepts": ["Begriff1","Begriff2","Begriff3"],
+  "difficulty_overall": 2,
+  "multiple_choice": [
+    {
+      "question": "Frage auf Deutsch?",
+      "correct": "Richtige Antwort",
+      "wrong": ["Falsch1","Falsch2","Falsch3"],
+      "difficulty": 1,
+      "explanation": "Warum diese Antwort richtig ist",
+      "variants": []
     }
+  ],
+  "true_false": [
+    { "statement": "Aussage über den Text", "is_true": true, "explanation": "Erklärung" }
+  ],
+  "memory_pairs": [
+    { "term": "Begriff max 4 Wörter", "definition": "Erklärung max 8 Wörter" }
+  ],
+  "fill_blanks": [
+    { "sentence": "Der ___ macht etwas.", "answer": "Begriff", "hint": "Kleiner Tipp" }
+  ]
+}
+Erstelle GENAU:
+- 8 multiple_choice: 3x difficulty:1, 3x difficulty:2, 2x difficulty:3
+- 4 true_false
+- 4 memory_pairs
+- 4 fill_blanks
+Nur Fakten die direkt im Text stehen. Alles auf Deutsch.
+TEXT:\n\n${workingText}`
 
-    // 3. JSON-Objekt parsen (nicht mehr Array!)
+    const rawText = await callClaude(
+      apiKey,
+      'Du bist ein Lernexperte. Antworte IMMER nur als valides JSON-Objekt. Kein anderer Text, keine Backticks.',
+      generatePrompt,
+      4000
+    )
+
     const jsonMatch = rawText.match(/\{[\s\S]*\}/)
     if (!jsonMatch) {
-      console.error('[generate] no JSON object in Claude text. raw:', rawText.slice(0, 500))
-      sendJson(res, 500, { error: 'Kein JSON in KI-Antwort gefunden', data: null })
+      console.error('[generate] no JSON object. raw:', rawText.slice(0, 300))
+      sendJson(res, 500, { error: 'Kein JSON in KI-Antwort', data: null })
       return
     }
 
-    let parsedJson: unknown
+    let parsedData: unknown
     try {
-      parsedJson = JSON.parse(jsonMatch[0])
+      parsedData = JSON.parse(jsonMatch[0])
     } catch (err) {
-      console.error('[generate] JSON.parse failed. match:', jsonMatch[0].slice(0, 500), 'err:', err)
-      sendJson(res, 500, { error: 'KI-Antwort konnte nicht geparst werden', data: null })
+      console.error('[generate] parse failed:', err)
+      sendJson(res, 500, { error: 'KI-Antwort nicht parsebar', data: null })
       return
     }
 
-    // 4. Minimalvalidierung: multiple_choice muss ein non-empty Array sein
-    const obj = parsedJson as { multiple_choice?: unknown[] }
-    if (!obj || !Array.isArray(obj.multiple_choice) || obj.multiple_choice.length === 0) {
-      console.error('[generate] invalid schema. parsed:', JSON.stringify(parsedJson).slice(0, 500))
-      sendJson(res, 500, { error: 'KI-Antwort hat kein gültiges multiple_choice-Array', data: null })
+    const obj = parsedData as { multiple_choice?: unknown[] }
+    if (!Array.isArray(obj?.multiple_choice) || obj.multiple_choice.length === 0) {
+      console.error('[generate] invalid schema:', JSON.stringify(parsedData).slice(0, 300))
+      sendJson(res, 500, { error: 'KI-Schema ungültig', data: null })
       return
     }
 
-    sendJson(res, 200, { error: null, data: parsedJson })
+    sendJson(res, 200, { error: null, data: parsedData })
   } catch (err) {
-    console.error('[generate] unexpected handler error:', err)
-    sendJson(res, 500, { error: 'Interner Serverfehler', data: null })
+    const msg = err instanceof Error ? err.message : 'Interner Fehler'
+    console.error('[generate] handler error:', msg)
+    sendJson(res, 500, { error: msg, data: null })
   }
 }

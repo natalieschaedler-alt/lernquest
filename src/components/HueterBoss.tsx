@@ -27,6 +27,12 @@ interface HueterBossProps {
 
 export default function HueterBoss(props: HueterBossProps) {
   const { questions, onVictory, onDefeat } = props
+
+  // Guard: keine Fragen → nichts rendern (BossPage navigiert weg)
+  if (!questions || questions.length === 0) {
+    return null
+  }
+
   const { t } = useTranslation()
 
   const bossEmoji = props.worldTheme?.bossEmoji ?? '🧙‍♂️'
@@ -55,7 +61,9 @@ export default function HueterBoss(props: HueterBossProps) {
   const answeredRef = useRef(false)
   const specialTriggeredRef = useRef(false)
 
-  const currentQuestion = questions[questionIdx % questions.length]
+  const currentQuestion = questions.length > 0
+    ? questions[questionIdx % questions.length]
+    : null
 
   // ── Intro ──
   useEffect(() => {
@@ -117,6 +125,7 @@ export default function HueterBoss(props: HueterBossProps) {
   const handleAnswer = useCallback(
     (answerIndex: number) => {
       if (answeredRef.current && answerIndex !== -1) return
+      if (!currentQuestion) return
       answeredRef.current = true
       setAnswered(true)
       setSelectedAnswer(answerIndex)
@@ -317,6 +326,9 @@ export default function HueterBoss(props: HueterBossProps) {
         : specialAttack === 'shuffle'
           ? '🎲 Chaos! Alles durchgemischt!'
           : ''
+
+  // Fight-Phase braucht eine Frage – defensiv absichern
+  if (!currentQuestion) return null
 
   // ── Fight phase ──
   return (

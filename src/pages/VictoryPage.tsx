@@ -8,9 +8,15 @@ const Confetti = lazy(() => import('react-confetti'))
 import { useGameStore, ACHIEVEMENT_DEFS } from '../stores/gameStore'
 import { getWorldById } from '../data/worlds'
 import { useAuth } from '../hooks/useAuth'
+import { useProgress } from '../hooks/useProgress'
+import { useStreak } from '../hooks/useStreak'
+import { useTutorial } from '../hooks/useTutorial'
 import { supabase } from '../lib/supabase'
 import { soundManager } from '../utils/soundManager'
+import { XP } from '../lib/gameConfig'
+import { updateSRAfterSession } from '../lib/database'
 import type { RewardResult, RewardTier, WorldTheme } from '../types'
+import TutorialTooltip from '../components/ui/TutorialTooltip'
 
 function getRewardResult(worldTheme: WorldTheme): RewardResult {
   const roll = Math.random()
@@ -31,19 +37,26 @@ export default function VictoryPage() {
   const { user } = useAuth()
 
   const score = useGameStore((s) => s.score)
-  const level = useGameStore((s) => s.level)
-  const streak = useGameStore((s) => s.streak)
   const questions = useGameStore((s) => s.questions)
   const currentWorldId = useGameStore((s) => s.currentWorldId)
-  const addXP = useGameStore((s) => s.addXP)
-  const updateStreak = useGameStore((s) => s.updateStreak)
+  const playerHP = useGameStore((s) => s.playerHP)
   const resetGame = useGameStore((s) => s.resetGame)
-  const incrementSessions = useGameStore((s) => s.incrementSessions)
-  const checkNewAchievements = useGameStore((s) => s.checkNewAchievements)
-  const initDailyChallenge = useGameStore((s) => s.initDailyChallenge)
-  const completeDailyChallenge = useGameStore((s) => s.completeDailyChallenge)
-  const dailyChallenge = useGameStore((s) => s.dailyChallenge)
-  const selectedWorldId = useGameStore((s) => s.selectedWorldId)
+  const questionResults = useGameStore((s) => s.questionResults)
+  const clearQuestionResults = useGameStore((s) => s.clearQuestionResults)
+
+  const {
+    level,
+    streak,
+    selectedWorldId,
+    dailyChallenge,
+    addXP,
+    incrementSessions,
+    checkNewAchievements,
+    initDailyChallenge,
+    completeDailyChallenge,
+  } = useProgress()
+  const { trackActivity } = useStreak()
+  const { isDone: tutorialDone, activeTip, showTip, dismissTip, completeTutorial } = useTutorial()
   const worldTheme = getWorldById(selectedWorldId)
 
   const [showConfetti, setShowConfetti] = useState(true)
@@ -53,7 +66,11 @@ export default function VictoryPage() {
   const [newLevel, setNewLevel] = useState(level)
 
   const [rewardResult] = useState<RewardResult>(() => getRewardResult(worldTheme))
-  const xpGain = useMemo(() => 50 + Math.floor(score / 10), [score])
+  // Stars: based on HP remaining (3=perfect, 2=1 mistake, 1=2 mistakes)
+  const stars = playerHP >= 3 ? 3 : playerHP >= 2 ? 2 : 1
+  const xpGain = useMemo(() => {
+    return XP.DUNGEON_COMPLETE + (stars === 3 ? XP.DUNGEON_3STARS : 0)
+  }, [stars])
   const hasRun = useRef(false)
 
   useEffect(() => {
@@ -61,7 +78,14 @@ export default function VictoryPage() {
     hasRun.current = true
 
     soundManager.playVictory()
-    updateStreak()
+    const prevStreak = useGameStore.getState().streak
+    void trackActivity('dungeon').then(() => {
+      // Daily streak bonus (only on new consecutive active day)
+      const newStreak = useGameStore.getState().streak
+      if (newStreak > 0 && newStreak > prevStreak) {
+        addXP(XP.DAILY_STREAK_BONUS)
+      }
+    })
     incrementSessions()
     initDailyChallenge()
 
@@ -75,9 +99,9 @@ export default function VictoryPage() {
       })
     }
 
-    // Check streak milestone and play sound
+    // Streak sound is triggered when pendingMilestone is set (via trackActivity above)
     const currentStreak = useGameStore.getState().streak
-    if (currentStreak === 3 || currentStreak === 7 || currentStreak === 30) {
+    if (currentStreak > 1) {
       setTimeout(() => soundManager.playStreak(), 1200)
     }
 
@@ -119,8 +143,7 @@ export default function VictoryPage() {
     }
 
     if (user) {
-      void supabase.rpc('add_weekly_xp', { p_user_id: user.id, p_xp: totalXP })
-      void supabase.rpc('update_streak', { p_user_id: user.id })
+      // XP/Streak-Sync übernimmt useProgress – hier nur Session-Insert
       const nonMemoryCount = questions.filter((q) => q.question_type !== 'memory').length
       void supabase.from('sessions').insert({
         user_id: user.id,
@@ -131,6 +154,11 @@ export default function VictoryPage() {
         questions_correct: Math.round(score / 10),
         questions_total: Math.max(nonMemoryCount, 1),
       })
+      // SM-2: update spaced repetition for all answered questions
+      if (currentWorldId && !currentWorldId.startsWith('local-') && currentWorldId !== 'review-quest') {
+        void updateSRAfterSession(user.id, currentWorldId, questionResults)
+      }
+      clearQuestionResults()
     } else {
       setTimeout(() => {
         toast(t('victory.guest_save_prompt'), { icon: '💾', duration: 5000 })
@@ -139,13 +167,23 @@ export default function VictoryPage() {
 
     const timer = setTimeout(() => setShowConfetti(false), 5000)
     return () => clearTimeout(timer)
-  }, [updateStreak, addXP, incrementSessions, xpGain, rewardResult.xpBonus, user, score, selectedWorldId, currentWorldId, questions, t, checkNewAchievements, initDailyChallenge, completeDailyChallenge, dailyChallenge])
+  }, [trackActivity, addXP, incrementSessions, xpGain, rewardResult.xpBonus, user, score, selectedWorldId, currentWorldId, questions, t, checkNewAchievements, initDailyChallenge, completeDailyChallenge, dailyChallenge, questionResults, clearQuestionResults])
 
   function handleOpenBox() {
     if (isOpening || boxOpened) return
     setIsOpening(true)
     setTimeout(() => setBoxOpened(true), 800)
   }
+
+  // Tutorial: show victory_loot tip when loot chest is opened, then complete tutorial
+  useEffect(() => {
+    if (!boxOpened || tutorialDone) return
+    const t1 = setTimeout(() => showTip('victory_loot'), 400)
+    // Mark tutorial complete after the tip would have auto-closed
+    // completeTutorial is stable (useCallback), safe in deps
+    const t2 = setTimeout(completeTutorial, 400 + 5500)
+    return () => { clearTimeout(t1); clearTimeout(t2) }
+  }, [boxOpened, tutorialDone, showTip, completeTutorial])
 
   const stagger = 0.15
 
@@ -191,15 +229,35 @@ export default function VictoryPage() {
           {t('victory.score', { score })}
         </p>
 
+        {/* Stars */}
+        <motion.div
+          className="flex justify-center gap-1 mt-2"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: stagger * 2.5 }}
+        >
+          {[1, 2, 3].map((s) => (
+            <motion.span
+              key={s}
+              style={{ fontSize: 28 }}
+              initial={{ scale: 0 }}
+              animate={{ scale: s <= stars ? [0, 1.4, 1] : 1 }}
+              transition={{ delay: stagger * 2.5 + (s - 1) * 0.12, type: 'spring', damping: 12 }}
+            >
+              {s <= stars ? '⭐' : '☆'}
+            </motion.span>
+          ))}
+        </motion.div>
+
         {/* XP Gain */}
         <motion.p
-          className="mt-3"
+          className="mt-2"
           style={{ fontSize: '18px', color: '#00C896' }}
           initial={{ y: 10, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ delay: stagger * 3 }}
         >
-          +{xpGain} XP
+          +{xpGain} XP {stars === 3 && <span style={{ fontSize: 14, color: '#FFD700' }}>({t('xp.perfect_run')})</span>}
         </motion.p>
 
         {/* Streak display */}
@@ -355,6 +413,13 @@ export default function VictoryPage() {
           🏆 {t('league.title')}
         </motion.button>
       </motion.div>
+
+      {/* Tutorial: victory_loot tip */}
+      <TutorialTooltip
+        visible={activeTip === 'victory_loot'}
+        stepId={activeTip}
+        onDismiss={dismissTip}
+      />
     </main>
   )
 }

@@ -4,6 +4,9 @@ import { motion } from 'motion/react'
 import { useGameStore } from '../stores/gameStore'
 import { getWorldById } from '../data/worlds'
 import HueterBoss from '../components/HueterBoss'
+import { XP } from '../lib/gameConfig'
+import { useTutorial } from '../hooks/useTutorial'
+import TutorialTooltip from '../components/ui/TutorialTooltip'
 
 export default function BossPage() {
   const navigate = useNavigate()
@@ -11,6 +14,7 @@ export default function BossPage() {
   const addXP = useGameStore((s) => s.addXP)
   const selectedWorldId = useGameStore((s) => s.selectedWorldId)
   const worldTheme = getWorldById(selectedWorldId)
+  const { isDone: tutorialDone, activeTip, showTip, dismissTip } = useTutorial()
 
   // Guard: keine Fragen (z.B. direkter Aufruf von /boss) → zurück zum Onboarding
   useEffect(() => {
@@ -18,6 +22,13 @@ export default function BossPage() {
       navigate('/onboarding', { replace: true })
     }
   }, [questions.length, navigate])
+
+  // Tutorial: boss_fight tip
+  useEffect(() => {
+    if (tutorialDone || questions.length === 0) return
+    const id = setTimeout(() => showTip('boss_fight'), 800)
+    return () => clearTimeout(id)
+  }, [tutorialDone, showTip, questions.length])
 
   if (questions.length === 0) return null
 
@@ -32,8 +43,8 @@ export default function BossPage() {
         <HueterBoss
           questions={questions}
           worldTheme={worldTheme}
-          onVictory={(score) => {
-            addXP(score)
+          onVictory={() => {
+            addXP(XP.BOSS_DEFEAT)
             navigate('/victory', { replace: true })
           }}
           onDefeat={() => {
@@ -41,6 +52,13 @@ export default function BossPage() {
           }}
         />
       </div>
+
+      {/* Tutorial: boss_fight tip */}
+      <TutorialTooltip
+        visible={activeTip === 'boss_fight'}
+        stepId={activeTip}
+        onDismiss={dismissTip}
+      />
     </motion.div>
   )
 }

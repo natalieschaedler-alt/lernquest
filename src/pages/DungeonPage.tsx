@@ -1,9 +1,11 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'motion/react'
 import { useGameStore } from '../stores/gameStore'
 import { useAuth } from '../hooks/useAuth'
+import { useStreak } from '../hooks/useStreak'
+import { useTutorial } from '../hooks/useTutorial'
 import { getWorldById } from '../data/worlds'
 import type { Question } from '../types'
 import Wortwirbel from '../components/games/Wortwirbel'
@@ -11,8 +13,14 @@ import OrakelKristall from '../components/games/OrakelKristall'
 import MemoryKarten from '../components/games/MemoryKarten'
 import LueckentextSpiel from '../components/games/LueckentextSpiel'
 import WorldBackground from '../components/WorldBackground'
-import { pointsForDifficulty } from '../lib/gameConfig'
+import {
+  pointsForDifficulty,
+  XP, CRIT_CHANCE, GOLDEN_CHANCE, GOLDEN_MULTIPLIER, CRIT_MULTIPLIER, FAST_THRESHOLD_MS,
+} from '../lib/gameConfig'
+import { XpFloat } from '../components/ui/XpBar'
 import { saveMistake } from '../lib/database'
+import TutorialTooltip from '../components/ui/TutorialTooltip'
+import HelpModal from '../components/ui/HelpModal'
 
 type GameType = 'wortwirbel' | 'orakel' | 'lueckentext'
 
@@ -40,8 +48,12 @@ export default function DungeonPage() {
   const initDailyChallenge = useGameStore((s) => s.initDailyChallenge)
   const completeDailyChallenge = useGameStore((s) => s.completeDailyChallenge)
   const dailyChallenge = useGameStore((s) => s.dailyChallenge)
+  const recordQuestionResult = useGameStore((s) => s.recordQuestionResult)
 
   const worldTheme = getWorldById(selectedWorldId)
+  const { trackActivity } = useStreak()
+  const { isDone: tutorialDone, activeTip, showTip, dismissTip } = useTutorial()
+  const [showHelp, setShowHelp] = useState(false)
 
   // Sortierung: Memory zuerst (als Block), dann MC-easy, MC-mittel, TF, Fill, MC-hard, Rest
   const orderedQuestions = useMemo<Question[]>(() => {
@@ -75,12 +87,24 @@ export default function DungeonPage() {
   const [rewardText, setRewardText] = useState('')
   const [tabHidden, setTabHidden] = useState(false)
 
+  // ── Variable rewards ─────────────────────────────────────────
+  const [isGoldenQuestion, setIsGoldenQuestion] = useState(false)
+  const [xpFloatInfo, setXpFloatInfo] = useState<{ amount: number; isGolden: boolean; isCrit: boolean } | null>(null)
+  const [critFlash, setCritFlash] = useState(false)
+  const questionStartRef = useRef<number>(Date.now())
+
   // Guard: keine Fragen → Onboarding
   useEffect(() => {
     if (questions.length === 0) {
       navigate('/onboarding', { replace: true })
     }
   }, [questions.length, navigate])
+
+  // Reset golden flag + start timer for each new question
+  useEffect(() => {
+    setIsGoldenQuestion(Math.random() < GOLDEN_CHANCE)
+    questionStartRef.current = Date.now()
+  }, [nonMemoryIndex])
 
   // Ensure daily challenge exists when entering the dungeon
   useEffect(() => {
@@ -94,6 +118,23 @@ export default function DungeonPage() {
     document.addEventListener('visibilitychange', handleVisibility)
     return () => document.removeEventListener('visibilitychange', handleVisibility)
   }, [])
+
+  // ── Tutorial triggers ─────────────────────────────────────────────────────
+  // Tip 1: First question — fires once when memory phase is done
+  useEffect(() => {
+    if (tutorialDone || !memoryDone) return
+    const id = setTimeout(() => showTip('dungeon_q1'), 700)
+    return () => clearTimeout(id)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [memoryDone]) // intentionally narrow — fires once when memory clears
+
+  // Tip 3: Room 2 — fires when the second non-memory question is reached
+  useEffect(() => {
+    if (tutorialDone || nonMemoryIndex !== 1) return
+    const id = setTimeout(() => showTip('dungeon_room2'), 400)
+    return () => clearTimeout(id)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nonMemoryIndex]) // intentionally narrow
 
   const currentStep = !memoryDone && hasMemory ? 0 : (hasMemory ? 1 : 0) + nonMemoryIndex
   const progress = totalSteps > 0 ? (currentStep / totalSteps) * 100 : 0
@@ -110,17 +151,40 @@ export default function DungeonPage() {
       void saveMistake(user.id, currentWorldId, nonMemoryIndex)
     }
 
+    // ── SM-2 tracking (before correct/wrong split) ─────────────
+    const elapsed = Date.now() - questionStartRef.current
+    const fast    = elapsed < FAST_THRESHOLD_MS
+    const originalIndex = questions.findIndex((q) => q === currentQuestion)
+    if (originalIndex >= 0) {
+      recordQuestionResult(originalIndex, correct, fast)
+    }
+
     if (correct) {
+      void trackActivity('question')
       const newCombo = combo + 1
       setCombo(newCombo)
-      const txt =
-        newCombo >= 2
-          ? `+${points} XP (${t('game.combo', { count: newCombo })})`
-          : `+${points} XP`
-      setRewardText(txt)
+
+      // ── XP calculation ──────────────────────────────────────
+      const isCrit  = Math.random() < CRIT_CHANCE
+      const baseXP  = fast ? XP.QUESTION_FAST : XP.QUESTION_BASE
+      const mult    = (isGoldenQuestion ? GOLDEN_MULTIPLIER : 1) * (isCrit ? CRIT_MULTIPLIER : 1)
+      const finalXP = Math.round(baseXP * mult)
+
+      addXP(finalXP)
+
+      const comboSuffix = newCombo >= 2 ? ` (${t('game.combo', { count: newCombo })})` : ''
+      setRewardText(`+${finalXP} XP${comboSuffix}`)
       setShowReward(true)
-      addXP(points)
-      setTimeout(() => setShowReward(false), 1000)
+      setTimeout(() => setShowReward(false), 1200)
+
+      // Flying XP text
+      setXpFloatInfo({ amount: finalXP, isGolden: isGoldenQuestion, isCrit })
+
+      // Critical flash
+      if (isCrit) setCritFlash(true)
+
+      // Tutorial tip 2: explain XP after the first correct answer
+      if (!tutorialDone) setTimeout(() => showTip('dungeon_xp'), 1500)
 
       // Mark combo_3 daily challenge complete when 3x combo is reached
       if (newCombo >= 3) {
@@ -146,7 +210,7 @@ export default function DungeonPage() {
       setNonMemoryIndex((prev) => prev + 1)
       setAnswered(false)
     }, 1200)
-  }, [answered, answerQuestion, user, currentWorldId, nonMemoryIndex, combo, t, addXP, completeDailyChallenge, navigate, nonMemoryQuestions.length])
+  }, [answered, answerQuestion, user, currentWorldId, nonMemoryIndex, combo, t, addXP, completeDailyChallenge, navigate, nonMemoryQuestions.length, trackActivity, isGoldenQuestion, tutorialDone, showTip, questions, currentQuestion, recordQuestionResult])
 
   const handleMemoryComplete = useCallback((memScore: number) => {
     addXP(memScore)
@@ -221,11 +285,15 @@ export default function DungeonPage() {
             </div>
           </div>
 
-          {/* Score + Quit */}
-          <div className="flex items-center gap-3">
+          {/* Score + Help + Quit */}
+          <div className="flex items-center gap-2">
             <motion.div
               key={score}
               className="font-display text-lg text-secondary"
+              style={activeTip === 'dungeon_xp' ? {
+                filter: 'drop-shadow(0 0 10px #00C896)',
+                color:  '#00C896',
+              } : {}}
               initial={{ scale: 1.4, y: -4 }}
               animate={{ scale: 1, y: 0 }}
               transition={{ type: 'spring', damping: 12 }}
@@ -234,6 +302,14 @@ export default function DungeonPage() {
             >
               {t('game.score', { score })}
             </motion.div>
+            <button
+              type="button"
+              onClick={() => setShowHelp(true)}
+              aria-label={t('tutorial.help_title')}
+              className="font-body text-xs text-gray-500 hover:text-white transition-colors cursor-pointer border border-dark-border rounded-lg px-2 py-1 bg-transparent"
+            >
+              ?
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -278,29 +354,48 @@ export default function DungeonPage() {
             exit={{ x: -100, opacity: 0 }}
             transition={{ duration: 0.3 }}
           >
-            {!memoryDone && hasMemory ? (
-              <MemoryKarten
-                questions={memoryQuestions}
-                primaryColor={worldTheme.primaryColor}
-                onComplete={handleMemoryComplete}
-              />
-            ) : currentQuestion && gameType === 'orakel' ? (
-              <OrakelKristall
-                questions={[currentQuestion]}
-                onComplete={handleOrakelComplete}
-              />
-            ) : currentQuestion && gameType === 'lueckentext' ? (
-              <LueckentextSpiel
-                questions={[currentQuestion]}
-                primaryColor={worldTheme.primaryColor}
-                onComplete={handleLueckentextComplete}
-              />
-            ) : currentQuestion ? (
-              <Wortwirbel
-                question={currentQuestion}
-                onAnswer={handleWortwirbel}
-              />
-            ) : null}
+            {/* Golden question banner */}
+            {isGoldenQuestion && !memoryDone && (
+              <motion.div
+                className="flex items-center justify-center gap-1.5 mb-2 py-1 rounded-xl font-body font-bold text-xs"
+                style={{ background: 'rgba(255,215,0,0.12)', color: '#FFD700', border: '1px solid rgba(255,215,0,0.35)' }}
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+              >
+                ✨ {t('xp.golden_question')}
+              </motion.div>
+            )}
+            <div
+              style={isGoldenQuestion && !memoryDone ? {
+                boxShadow: '0 0 28px rgba(255,215,0,0.35)',
+                borderRadius: 16,
+                outline: '1.5px solid rgba(255,215,0,0.45)',
+              } : {}}
+            >
+              {!memoryDone && hasMemory ? (
+                <MemoryKarten
+                  questions={memoryQuestions}
+                  primaryColor={worldTheme.primaryColor}
+                  onComplete={handleMemoryComplete}
+                />
+              ) : currentQuestion && gameType === 'orakel' ? (
+                <OrakelKristall
+                  questions={[currentQuestion]}
+                  onComplete={handleOrakelComplete}
+                />
+              ) : currentQuestion && gameType === 'lueckentext' ? (
+                <LueckentextSpiel
+                  questions={[currentQuestion]}
+                  primaryColor={worldTheme.primaryColor}
+                  onComplete={handleLueckentextComplete}
+                />
+              ) : currentQuestion ? (
+                <Wortwirbel
+                  question={currentQuestion}
+                  onAnswer={handleWortwirbel}
+                />
+              ) : null}
+            </div>
           </motion.div>
         </AnimatePresence>
       </main>
@@ -323,7 +418,42 @@ export default function DungeonPage() {
         )}
       </AnimatePresence>
 
-      {/* ── Reward overlay ── */}
+      {/* ── Critical hit flash ── */}
+      <AnimatePresence>
+        {critFlash && (
+          <motion.div
+            className="fixed inset-0 z-[60] pointer-events-none flex items-center justify-center"
+            initial={{ opacity: 0.7 }}
+            animate={{ opacity: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.55 }}
+            onAnimationComplete={() => setCritFlash(false)}
+            style={{ background: 'rgba(255,107,53,0.25)' }}
+          >
+            <motion.p
+              className="font-display"
+              style={{ fontSize: 52, color: '#FF6B35', textShadow: '0 0 40px #FF6B3599' }}
+              initial={{ scale: 0.5, opacity: 1 }}
+              animate={{ scale: 1.8, opacity: 0 }}
+              transition={{ duration: 0.55 }}
+            >
+              {t('xp.crit_hit')}
+            </motion.p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Flying XP float ── */}
+      {xpFloatInfo && (
+        <XpFloat
+          amount={xpFloatInfo.amount}
+          isGolden={xpFloatInfo.isGolden}
+          isCrit={xpFloatInfo.isCrit}
+          onDone={() => setXpFloatInfo(null)}
+        />
+      )}
+
+      {/* ── Reward overlay (combo text) ── */}
       <AnimatePresence>
         {showReward && (
           <motion.div
@@ -340,6 +470,16 @@ export default function DungeonPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ── Tutorial tooltips ── */}
+      <TutorialTooltip
+        visible={activeTip !== null && ['dungeon_q1', 'dungeon_xp', 'dungeon_room2'].includes(activeTip ?? '')}
+        stepId={activeTip}
+        onDismiss={dismissTip}
+      />
+
+      {/* ── Quick-help modal ── */}
+      <HelpModal open={showHelp} onClose={() => setShowHelp(false)} />
     </div>
   )
 }

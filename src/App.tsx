@@ -5,7 +5,12 @@ import { useTranslation } from 'react-i18next'
 import LoadingSpinner from './components/ui/LoadingSpinner'
 import CookieBanner from './components/ui/CookieBanner'
 import ErrorBoundary from './components/ErrorBoundary'
+import StreakMilestoneModal from './components/ui/StreakMilestoneModal'
+import StreakLostModal from './components/ui/StreakLostModal'
+import LevelUpOverlay from './components/ui/LevelUpOverlay'
+import MysteryBoxModal from './components/ui/MysteryBoxModal'
 import { supabase } from './lib/supabase'
+import { useGameStore } from './stores/gameStore'
 
 const LandingPage = lazy(() => import('./pages/LandingPage'))
 const StartPage = lazy(() => import('./pages/StartPage'))
@@ -21,7 +26,17 @@ const OfflinePage = lazy(() => import('./pages/OfflinePage'))
 const ImpressumPage = lazy(() => import('./pages/ImpressumPage'))
 const DatenschutzPage = lazy(() => import('./pages/DatenschutzPage'))
 const AGBPage = lazy(() => import('./pages/AGBPage'))
+const DashboardPage = lazy(() => import('./pages/DashboardPage'))
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'))
+const TeacherRegisterPage = lazy(() => import('./pages/teacher/TeacherRegisterPage'))
+const TeacherDashboardPage = lazy(() => import('./pages/teacher/TeacherDashboardPage'))
+
+/** Claims the daily mystery box once per day on app start. */
+function DailyBoxChecker() {
+  const claimMysteryBox = useGameStore((s) => s.claimMysteryBox)
+  useEffect(() => { claimMysteryBox() }, [claimMysteryBox])
+  return null
+}
 
 /** Fires a toast when a user's Supabase session expires unexpectedly. */
 function SessionWatcher() {
@@ -53,6 +68,7 @@ export default function App() {
     <ErrorBoundary>
       <Suspense fallback={<LoadingSpinner />}>
         <SessionWatcher />
+        <DailyBoxChecker />
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/start" element={<StartPage />} />
@@ -61,6 +77,7 @@ export default function App() {
           <Route path="/boss" element={<BossPage />} />
           <Route path="/victory" element={<VictoryPage />} />
           <Route path="/gameover" element={<GameOverPage />} />
+          <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/league" element={<LeaguePage />} />
           <Route path="/auth" element={<AuthPage />} />
@@ -68,9 +85,15 @@ export default function App() {
           <Route path="/impressum" element={<ImpressumPage />} />
           <Route path="/datenschutz" element={<DatenschutzPage />} />
           <Route path="/agb" element={<AGBPage />} />
+          <Route path="/lehrer/registrieren" element={<TeacherRegisterPage />} />
+          <Route path="/lehrer/dashboard" element={<TeacherDashboardPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
         <CookieBanner />
+        <StreakMilestoneModal />
+        <StreakLostModal />
+        <LevelUpOverlay />
+        <MysteryBoxModal />
       </Suspense>
     </ErrorBoundary>
   )

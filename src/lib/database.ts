@@ -1,6 +1,9 @@
 import { supabase } from './supabase'
 import { useGameStore } from '../stores/gameStore'
 import type { World, GameSession, Character, Profile, Mistake } from '../types'
+import { sm2Calculate, qualityFromResult } from './sm2'
+import type { EaseStrength } from './sm2'
+export type { EaseStrength }
 
 // --- Worlds ---
 
@@ -233,6 +236,143 @@ export async function getWeeklyLeaderboard(limit = 50): Promise<Array<{
   } catch (err) {
     console.error('getWeeklyLeaderboard:', err)
     return []
+  }
+}
+
+// --- Spaced Repetition (SM-2) ---
+
+export interface SRAnswerResult {
+  questionIndex: number
+  correct: boolean
+  fast: boolean
+}
+
+/**
+ * Returns the count of questions due for review today for a given user.
+ */
+export async function getDueSRCount(userId: string): Promise<number> {
+  try {
+    const { count, error } = await supabase
+      .from('spaced_repetition')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .lte('next_review_at', new Date().toISOString())
+    if (error) throw error
+    return count ?? 0
+  } catch (err) {
+    console.error('getDueSRCount:', err)
+    return 0
+  }
+}
+
+/**
+ * Returns up to `limit` due SR records (oldest first) as { worldId, questionIndex }.
+ */
+export async function getDueSRRecords(
+  userId: string,
+  limit = 15,
+): Promise<Array<{ worldId: string; questionIndex: number }>> {
+  try {
+    const { data, error } = await supabase
+      .from('spaced_repetition')
+      .select('world_id, question_index')
+      .eq('user_id', userId)
+      .lte('next_review_at', new Date().toISOString())
+      .order('next_review_at', { ascending: true })
+      .limit(limit)
+    if (error) throw error
+    return (data ?? []).map((r) => ({ worldId: r.world_id as string, questionIndex: r.question_index as number }))
+  } catch (err) {
+    console.error('getDueSRRecords:', err)
+    return []
+  }
+}
+
+/**
+ * Returns average ease_factor and count of reviewed questions per world_id.
+ * Used by the dashboard to compute topic card strength indicators.
+ */
+export async function getWorldSRSummary(
+  userId: string,
+): Promise<Record<string, { avgEaseFactor: number; count: number }>> {
+  try {
+    const { data, error } = await supabase
+      .from('spaced_repetition')
+      .select('world_id, ease_factor')
+      .eq('user_id', userId)
+    if (error) throw error
+
+    const byWorld: Record<string, { sum: number; count: number }> = {}
+    for (const row of data ?? []) {
+      const wid = row.world_id as string
+      if (!byWorld[wid]) byWorld[wid] = { sum: 0, count: 0 }
+      byWorld[wid].sum   += row.ease_factor as number
+      byWorld[wid].count += 1
+    }
+
+    return Object.fromEntries(
+      Object.entries(byWorld).map(([wid, { sum, count }]) => [
+        wid,
+        { avgEaseFactor: sum / count, count },
+      ]),
+    )
+  } catch (err) {
+    console.error('getWorldSRSummary:', err)
+    return {}
+  }
+}
+
+/**
+ * Applies SM-2 to the answered questions and upserts the results into Supabase.
+ * Fetches existing SR records first so the algorithm can continue from where it left off.
+ */
+export async function updateSRAfterSession(
+  userId: string,
+  worldId: string,
+  results: SRAnswerResult[],
+): Promise<void> {
+  if (results.length === 0) return
+  try {
+    // Fetch existing SR state for these questions
+    const { data: existing } = await supabase
+      .from('spaced_repetition')
+      .select('question_index, ease_factor, interval, repetitions')
+      .eq('user_id', userId)
+      .eq('world_id', worldId)
+      .in('question_index', results.map((r) => r.questionIndex))
+
+    const existingMap: Record<number, { ease_factor: number; interval: number; repetitions: number }> = {}
+    for (const row of existing ?? []) {
+      existingMap[row.question_index as number] = {
+        ease_factor:  row.ease_factor  as number,
+        interval:     row.interval     as number,
+        repetitions:  row.repetitions  as number,
+      }
+    }
+
+    const now = new Date().toISOString()
+    const rows = results.map((r) => {
+      const cur = existingMap[r.questionIndex] ?? { ease_factor: 2.5, interval: 1, repetitions: 0 }
+      const quality  = qualityFromResult(r.correct, r.fast)
+      const sm2      = sm2Calculate({ quality, easeFactor: cur.ease_factor, interval: cur.interval, repetitions: cur.repetitions })
+      return {
+        user_id:          userId,
+        world_id:         worldId,
+        question_index:   r.questionIndex,
+        ease_factor:      sm2.easeFactor,
+        interval:         sm2.interval,
+        repetitions:      sm2.repetitions,
+        next_review_at:   sm2.nextReviewAt,
+        last_reviewed_at: now,
+      }
+    })
+
+    const { error } = await supabase
+      .from('spaced_repetition')
+      .upsert(rows, { onConflict: 'user_id,world_id,question_index' })
+    if (error) throw error
+  } catch (err) {
+    console.error('updateSRAfterSession:', err)
   }
 }
 

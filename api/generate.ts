@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 import { Ratelimit } from '@upstash/ratelimit'
 import { Redis } from '@upstash/redis'
-import { getFallbackWorld } from './_lib/fallbackQuestions'
+import { getFallbackWorld } from './_lib/fallbackQuestions.js'
 
 export const config = {
   maxDuration: 60,

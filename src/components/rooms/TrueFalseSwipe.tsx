@@ -32,7 +32,8 @@ const SWIPE_THRESH = 60   // px to count as a swipe
 // ── Helpers ───────────────────────────────────────────────────
 
 function isQuestionTrue(q: Question): boolean {
-  return q.correctAnswer === true || q.correctAnswer === 'true' || q.correctAnswer === 'Wahr'
+  // answers: ['Wahr', 'Falsch'], correctIndex 0 = Wahr (true)
+  return q.correctIndex === 0
 }
 
 // ── Top card draggable ────────────────────────────────────────
@@ -204,7 +205,7 @@ export default function TrueFalseSwipe({ questions, worldTheme, onComplete, onHi
         if (comboRef.current >= COMBO_FIRE) {
           feel.particles(
             { x: window.innerWidth / 2, y: window.innerHeight * 0.45 },
-            'fire', 4
+            'lava', 4
           )
           sfx.play('streak_fire')
         }

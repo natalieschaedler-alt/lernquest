@@ -24,11 +24,6 @@ export interface SpeedRunProps {
   onHit?: () => void
 }
 
-interface CardState {
-  question: Question
-  key: number
-}
-
 // ── Constants ─────────────────────────────────────────────────
 
 const TIMER_START   = 30
@@ -40,18 +35,12 @@ const PITCH_STEP    = 0.06   // pitch increment per correct answer
 // ── Helpers ───────────────────────────────────────────────────
 
 function getOptions(q: Question): [string, string] {
-  if (q.type === 'tf') return ['Wahr', 'Falsch']
-  // MC: use first two options
-  const opts = q.options ?? []
-  return [opts[0] ?? 'A', opts[1] ?? 'B']
+  if (q.question_type === 'tf') return ['Wahr', 'Falsch']
+  return [q.answers[0] ?? 'A', q.answers[1] ?? 'B']
 }
 
 function isCorrect(q: Question, choice: string): boolean {
-  if (q.type === 'tf') {
-    const correct = q.correctAnswer === true || q.correctAnswer === 'true' || q.correctAnswer === 'Wahr'
-    return correct ? choice === 'Wahr' : choice === 'Falsch'
-  }
-  return choice === q.correctAnswer
+  return choice === q.answers[q.correctIndex]
 }
 
 function starCount(score: number, total: number): number {
@@ -153,7 +142,7 @@ export default function SpeedRun({ questions, worldTheme, onComplete, onHit }: S
         if (comboRef.current >= COMBO_FLAME) {
           feel.particles(
             { x: window.innerWidth / 2, y: window.innerHeight * 0.45 },
-            'fire', 5
+            'lava', 5
           )
         }
       }
@@ -173,7 +162,7 @@ export default function SpeedRun({ questions, worldTheme, onComplete, onHit }: S
 
       bus.emit('answerWrong', {
         questionIndex: qIdx,
-        correctAnswer: String(currentQ.correctAnswer),
+        correctAnswer: currentQ.answers[currentQ.correctIndex],
         givenAnswer:   choice,
       })
     }

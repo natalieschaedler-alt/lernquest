@@ -17,7 +17,8 @@
 
 // ── Event-Map ─────────────────────────────────────────────────
 
-export interface GameEvents {
+// eslint-disable-next-line @typescript-eslint/consistent-type-definitions
+export type GameEvents = {
   /** Korrekte Antwort gegeben */
   answerCorrect: {
     questionIndex: number

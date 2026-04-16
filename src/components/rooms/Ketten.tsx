@@ -135,9 +135,7 @@ export default function Ketten({ questions, worldTheme, onComplete }: KettenProp
             setBossState('snarl')
             sfx.play('boss_roar')
           }
-          // Advance to next question + target next intact chain
-          const nextChain = nextIntactChain(newIntact.map((v, i) => !v).map((b, i) => !intact[i] || i === targetChain ? true : false))
-          // Simpler: find first intact chain after current
+          // Find first intact chain after current
           const nc = (() => {
             for (let i = 0; i < 5; i++) {
               const idx = (targetChain + 1 + i) % 5
@@ -194,7 +192,6 @@ export default function Ketten({ questions, worldTheme, onComplete }: KettenProp
           const mx = (bx + ax) / 2 + (i < 2 ? 0 : (i === 4 ? 0 : (i === 2 ? -15 : 15)))
           const my = (by + ay) / 2
 
-          const dashLen    = Math.hypot(ax - bx, ay - by)
           const dashArray  = `8 5`
 
           return (

@@ -35,7 +35,7 @@ type StoneState = 'pending' | 'falling' | 'placed' | 'crumbling'
 type Phase      = 'question' | 'animating' | 'complete'
 
 // World-aware environment config
-function envConfig(worldId: string, primary: string) {
+function envConfig(worldId: string) {
   switch (worldId) {
     case 'water':  return { floorColor: '#0e7fa0', bubbleEmoji: '💧', groundEmoji: '❄️', label: 'Eisspalt' }
     case 'cyber':  return { floorColor: '#0a5040', bubbleEmoji: '⚡', groundEmoji: '🔌', label: 'Datenabyss' }
@@ -51,7 +51,7 @@ export default function LavaBridge({ questions, worldTheme, onComplete, onHit }:
   const { t }  = useTranslation()
   const feel   = useFeel()
   const prm    = useMemo(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches, [])
-  const env    = useMemo(() => envConfig(worldTheme.id, worldTheme.primaryColor), [worldTheme])
+  const env    = useMemo(() => envConfig(worldTheme.id), [worldTheme])
 
   const qs   = useMemo(() => questions.slice(0, NUM_STONES), [questions])
   const cont = useRef<HTMLDivElement>(null)

@@ -8,8 +8,7 @@
  * Timer: lava rises from the bottom — height represents time remaining.
  */
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
-import { motion, AnimatePresence } from 'motion/react'
-import { useTranslation } from 'react-i18next'
+import { motion } from 'motion/react'
 import type { Question, WorldTheme } from '../../types'
 import { useFeel } from '../../lib/feel'
 import { sfx } from '../../lib/sfx'
@@ -63,7 +62,6 @@ function makeDistractors(word: string, count: number): string[] {
 // ── Component ─────────────────────────────────────────────────
 
 export default function RunenCasting({ questions, worldTheme, onComplete, onHit }: RunenCastingProps) {
-  const { t }  = useTranslation()
   const feel   = useFeel()
   const prm    = useMemo(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches, [])
 

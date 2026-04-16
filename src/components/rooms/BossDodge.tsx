@@ -139,7 +139,7 @@ export default function BossDodge({ questions, worldTheme, onComplete, onHit }: 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prm, feel, onHit, onComplete])
 
-  const advanceAttack = useCallback((dodged: boolean) => {
+  const advanceAttack = useCallback((_dodged: boolean) => {
     if (doneRef.current) return
     setAttack(prev => {
       const next = prev + 1

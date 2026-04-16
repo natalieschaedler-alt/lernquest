@@ -166,12 +166,13 @@ export default function DungeonPage() {
   )
 
   const hasMemory = memoryQuestions.length > 0
-  const totalSteps = (hasMemory ? 1 : 0) + dungeonQueue.length
-
-  const [memoryDone, setMemoryDone] = useState(!hasMemory)
 
   // ── Dungeon queue (replaces flat nonMemoryIndex) ──────────────
   const dungeonQueue = useMemo<QueueItem[]>(() => buildDungeonQueue(nonMemoryQuestions), [nonMemoryQuestions])
+
+  const totalSteps = (hasMemory ? 1 : 0) + dungeonQueue.length
+
+  const [memoryDone, setMemoryDone] = useState(!hasMemory)
   const [queueIdx, setQueueIdx] = useState(0)
 
   const activeItem    = dungeonQueue[queueIdx]

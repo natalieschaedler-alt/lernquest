@@ -62,7 +62,7 @@ const MILESTONE_CONFIG: Record<StreakMilestone, MilestoneConfig> = {
 
 const PARTICLE_COLORS = ['#FF6B35', '#FFD700', '#6C3CE1', '#00C896', '#EC4899', '#3B82F6']
 
-function Particles({ color }: { color: string }) {
+function Particles({ color: _color }: { color: string }) {
   return (
     <>
       {Array.from({ length: 20 }, (_, i) => {

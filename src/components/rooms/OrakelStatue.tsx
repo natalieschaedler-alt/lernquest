@@ -49,16 +49,12 @@ const TABLET_POS = [
 // ── Helpers ───────────────────────────────────────────────────
 
 function getAnswerOptions(q: Question): string[] {
-  if (q.type === 'tf') return ['Wahr', 'Falsch']
-  return (q.options ?? []).slice(0, 4)
+  if (q.question_type === 'tf') return ['Wahr', 'Falsch']
+  return q.answers.slice(0, 4)
 }
 
 function checkAnswer(q: Question, choice: string): boolean {
-  if (q.type === 'tf') {
-    const correct = q.correctAnswer === true || q.correctAnswer === 'true' || q.correctAnswer === 'Wahr'
-    return correct ? choice === 'Wahr' : choice === 'Falsch'
-  }
-  return choice === q.correctAnswer
+  return choice === q.answers[q.correctIndex]
 }
 
 // ── Component ─────────────────────────────────────────────────
@@ -181,7 +177,7 @@ export default function OrakelStatue({ questions, worldTheme, onComplete, onHit 
 
       bus.emit('answerWrong', {
         questionIndex: qIdx,
-        correctAnswer: String(currentQ.correctAnswer),
+        correctAnswer: currentQ.answers[currentQ.correctIndex],
         givenAnswer:   choice,
       })
 

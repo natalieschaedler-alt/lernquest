@@ -9,7 +9,7 @@
  * Timer as SVG sandglass draining in the corner.
  */
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
-import { motion, AnimatePresence } from 'motion/react'
+import { motion } from 'motion/react'
 import { useTranslation } from 'react-i18next'
 import type { Question, WorldTheme } from '../../types'
 import { useFeel } from '../../lib/feel'

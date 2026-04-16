@@ -12,7 +12,7 @@ import { motion, AnimatePresence } from 'motion/react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import toast from 'react-hot-toast'
-import { useGameStore, ACHIEVEMENT_DEFS, getLevelTitle } from '../stores/gameStore'
+import { ACHIEVEMENT_DEFS, getLevelTitle } from '../stores/gameStore'
 import { useLeague } from '../hooks/useLeague'
 import { useMistakesReview } from '../hooks/useMistakesReview'
 import { useAuth } from '../hooks/useAuth'
@@ -152,7 +152,7 @@ export default function ProfilePage() {
 
   const {
     xp, level, streak, totalSessions,
-    playerName, selectedWorldId, dailyChallenge,
+    playerName, dailyChallenge,
     setPlayerName, initDailyChallenge,
   } = useProgress()
 

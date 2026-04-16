@@ -161,11 +161,8 @@ export default function MemoryTrail({ questions, worldTheme, onComplete, onHit }
     const tileIdx  = sequence[playerStep]
     if (tileIdx === undefined) return
 
-    const isCorrect = choice !== null && (() => {
-      if (!q) return false
-      const correct = q.correctAnswer === true || q.correctAnswer === 'true' || q.correctAnswer === 'Wahr'
-      return choice === correct
-    })()
+    // TF questions: answers=['Wahr','Falsch'], correctIndex=0 means Wahr
+    const isCorrect = choice !== null && !!q && (choice === (q.correctIndex === 0))
 
     qIdxRef.current += 1
 
@@ -229,8 +226,8 @@ export default function MemoryTrail({ questions, worldTheme, onComplete, onHit }
       ))
       bus.emit('answerWrong', {
         questionIndex: playerStep,
-        correctAnswer: String(miniQ?.correctAnswer),
-        givenAnswer:   String(choice),
+        correctAnswer: miniQ ? miniQ.answers[miniQ.correctIndex] : '',
+        givenAnswer:   choice === null ? '(timeout)' : choice ? 'Wahr' : 'Falsch',
       })
 
       setTimeout(() => {

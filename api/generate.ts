@@ -3,7 +3,11 @@ import { createHash } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 import { Ratelimit } from '@upstash/ratelimit'
 import { Redis } from '@upstash/redis'
-import { getFallbackWorld } from '../src/lib/fallbackQuestions'
+import { getFallbackWorld } from './_lib/fallbackQuestions'
+
+export const config = {
+  maxDuration: 60,
+}
 
 const MODEL = 'claude-haiku-4-5-20251001'
 const LONG_TEXT_THRESHOLD = 6000

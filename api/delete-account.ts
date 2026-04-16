@@ -13,6 +13,10 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createClient } from '@supabase/supabase-js'
 
+export const config = {
+  maxDuration: 10,
+}
+
 // ── Hilfsfunktionen ──────────────────────────────────────────
 
 function json(res: ServerResponse, status: number, body: unknown) {
@@ -21,15 +25,6 @@ function json(res: ServerResponse, status: number, body: unknown) {
   res.setHeader('Content-Type', 'application/json')
   res.setHeader('Content-Length', Buffer.byteLength(payload))
   res.end(payload)
-}
-
-async function readBody(req: IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let data = ''
-    req.on('data', (chunk: Buffer) => { data += chunk.toString() })
-    req.on('end', () => resolve(data))
-    req.on('error', reject)
-  })
 }
 
 // ── Handler ───────────────────────────────────────────────────

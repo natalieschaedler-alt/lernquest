@@ -12,6 +12,10 @@ import { createClient } from '@supabase/supabase-js'
 import { Ratelimit } from '@upstash/ratelimit'
 import { Redis } from '@upstash/redis'
 
+export const config = {
+  maxDuration: 45,
+}
+
 const MODEL = 'claude-haiku-4-5-20251001'
 // 4.5 MB allows a ~3.4 MB actual image after base64 decoding.
 // Client-side resize keeps the payload well under this.

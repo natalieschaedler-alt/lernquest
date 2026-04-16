@@ -16,6 +16,14 @@ beforeEach(() => {
     lastPlayedDate: null,
     selectedWorldId: 'fire',
     totalSessions: 0,
+    activityDays: {},
+    freezeCount: 0,
+    lastFreezeRefillDate: null,
+    longestStreak: 0,
+    previousStreak: 0,
+    pendingMilestone: null,
+    streakLostPending: false,
+    freezeJustUsed: false,
   })
 })
 
@@ -78,9 +86,9 @@ describe('gameStore – addXP and leveling', () => {
     expect(result.newLevel).toBe(useGameStore.getState().level)
   })
 
-  it('caps at level 10', () => {
-    useGameStore.getState().addXP(10000)
-    expect(useGameStore.getState().level).toBe(10)
+  it('caps at MAX_LEVEL (100)', () => {
+    useGameStore.getState().addXP(1_000_000)
+    expect(useGameStore.getState().level).toBe(100)
   })
 
   it('accumulates XP across multiple addXP calls', () => {
@@ -91,6 +99,10 @@ describe('gameStore – addXP and leveling', () => {
 })
 
 describe('gameStore – updateStreak', () => {
+  // updateStreak() is a thin shim over recordActivity('dungeon').
+  // lastPlayedDate uses toLocalISODate() (YYYY-MM-DD), not Date#toDateString().
+  const toISO = (d: Date) => d.toLocaleDateString('en-CA')
+
   it('sets streak to 1 on first play', () => {
     useGameStore.getState().updateStreak()
     expect(useGameStore.getState().streak).toBe(1)
@@ -98,20 +110,33 @@ describe('gameStore – updateStreak', () => {
 
   it('does not increment streak if already played today', () => {
     useGameStore.getState().updateStreak()
+    const firstStreak = useGameStore.getState().streak
     useGameStore.getState().updateStreak()
-    expect(useGameStore.getState().streak).toBe(1)
+    // Second call on same day must not increment (already active).
+    expect(useGameStore.getState().streak).toBe(firstStreak)
   })
 
   it('increments streak when played on consecutive day', () => {
-    const yesterday = new Date(Date.now() - 86400000).toDateString()
+    const yesterday = toISO(new Date(Date.now() - 86400000))
     useGameStore.setState({ streak: 3, lastPlayedDate: yesterday })
     useGameStore.getState().updateStreak()
     expect(useGameStore.getState().streak).toBe(4)
   })
 
-  it('resets streak to 1 when day was skipped', () => {
-    const twoDaysAgo = new Date(Date.now() - 2 * 86400000).toDateString()
-    useGameStore.setState({ streak: 5, lastPlayedDate: twoDaysAgo })
+  it('resets streak to 1 when day was skipped (no freeze)', () => {
+    const twoDaysAgo = toISO(new Date(Date.now() - 2 * 86400000))
+    // Disable weekly freeze auto-refill by pretending refill already happened.
+    const now = new Date()
+    const day = now.getDay()
+    const monday = new Date(now)
+    monday.setDate(now.getDate() - day + (day === 0 ? -6 : 1))
+    const mondayStr = toISO(monday)
+    useGameStore.setState({
+      streak: 5,
+      lastPlayedDate: twoDaysAgo,
+      freezeCount: 0,
+      lastFreezeRefillDate: mondayStr,
+    })
     useGameStore.getState().updateStreak()
     expect(useGameStore.getState().streak).toBe(1)
   })

@@ -11,7 +11,6 @@ import { useEffect } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { useTranslation } from 'react-i18next'
 import { useStreak } from '../../hooks/useStreak'
-import { useGameStore } from '../../stores/gameStore'
 
 export default function StreakCounter() {
   const { t } = useTranslation()
@@ -141,7 +140,3 @@ export function StreakChip() {
   )
 }
 
-/** Reads freezeCount from store without calling useStreak (for non-streak contexts). */
-export function useFreezeCount() {
-  return useGameStore((s) => s.freezeCount)
-}

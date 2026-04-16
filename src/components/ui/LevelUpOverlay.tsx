@@ -5,7 +5,7 @@
  * Konfetti-Partikel. Danach automatisches Ausblenden.
  * Montiert in App.tsx; liest pendingLevelUp aus dem Store.
  */
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { useTranslation } from 'react-i18next'
 import { useGameStore, getLevelTitle } from '../../stores/gameStore'
@@ -17,31 +17,36 @@ const DISPLAY_MS = 3000
 const COLORS = ['#FFD700', '#FF6B35', '#6C3CE1', '#00C896', '#EC4899', '#3B82F6', '#F59E0B']
 
 function Confetti() {
+  const particles = useMemo(() => {
+    return Array.from({ length: 24 }, (_, i) => {
+      const angle = (i / 24) * 360
+      const r     = 120 + Math.random() * 80
+      const dx    = Math.cos((angle * Math.PI) / 180) * r
+      const dy    = Math.sin((angle * Math.PI) / 180) * r - 40
+      const size  = 8 + Math.random() * 8
+      const color = COLORS[i % COLORS.length]
+      const dur   = 1.0 + Math.random() * 0.5
+      return { i, angle, dx, dy, size, color, dur }
+    })
+  }, [])
+
   return (
     <>
-      {Array.from({ length: 24 }, (_, i) => {
-        const angle  = (i / 24) * 360
-        const r      = 120 + Math.random() * 80
-        const dx     = Math.cos((angle * Math.PI) / 180) * r
-        const dy     = Math.sin((angle * Math.PI) / 180) * r - 40
-        const size   = 8 + Math.random() * 8
-        const color  = COLORS[i % COLORS.length]
-        return (
-          <motion.div
-            key={i}
-            className="absolute rounded-sm pointer-events-none"
-            style={{
-              width: size, height: size * 0.6,
-              background: color,
-              top: '40%', left: '50%',
-              originX: '50%', originY: '50%',
-            }}
-            initial={{ x: 0, y: 0, opacity: 1, rotate: 0, scale: 1 }}
-            animate={{ x: dx, y: dy, opacity: 0, rotate: angle * 2, scale: 0.3 }}
-            transition={{ duration: 1.0 + Math.random() * 0.5, ease: 'easeOut', delay: 0.1 + i * 0.025 }}
-          />
-        )
-      })}
+      {particles.map((p) => (
+        <motion.div
+          key={p.i}
+          className="absolute rounded-sm pointer-events-none"
+          style={{
+            width: p.size, height: p.size * 0.6,
+            background: p.color,
+            top: '40%', left: '50%',
+            originX: '50%', originY: '50%',
+          }}
+          initial={{ x: 0, y: 0, opacity: 1, rotate: 0, scale: 1 }}
+          animate={{ x: p.dx, y: p.dy, opacity: 0, rotate: p.angle * 2, scale: 0.3 }}
+          transition={{ duration: p.dur, ease: 'easeOut', delay: 0.1 + p.i * 0.025 }}
+        />
+      ))}
     </>
   )
 }

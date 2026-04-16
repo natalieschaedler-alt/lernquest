@@ -135,7 +135,7 @@ export default function DashboardPage() {
   const navigate   = useNavigate()
   const { t, i18n } = useTranslation()
   const { user, loading: authLoading } = useAuth()
-  const { playerName, xp: _xp, level: _level, selectedWorldId } = useProgress()
+  const { playerName, selectedWorldId } = useProgress()
   const { streak } = useStreak()
   const questions     = useGameStore((s) => s.questions)
   const setQuestions  = useGameStore((s) => s.setQuestions)

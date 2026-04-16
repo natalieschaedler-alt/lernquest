@@ -4,7 +4,7 @@
  * Meilensteine: 7 · 14 · 30 · 50 · 100 · 365 Tage
  * Wird global in App.tsx gemountet und liest pendingMilestone aus dem Store.
  */
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { useTranslation } from 'react-i18next'
 import { useStreak, MILESTONE_XP } from '../../hooks/useStreak'
@@ -62,34 +62,40 @@ const MILESTONE_CONFIG: Record<StreakMilestone, MilestoneConfig> = {
 
 const PARTICLE_COLORS = ['#FF6B35', '#FFD700', '#6C3CE1', '#00C896', '#EC4899', '#3B82F6']
 
-function Particles({ color: _color }: { color: string }) {
+function Particles() {
+  const particles = useMemo(() => {
+    return Array.from({ length: 20 }, (_, i) => {
+      const angle  = (i / 20) * 360
+      const radius = 90 + Math.random() * 60
+      const dx     = Math.cos((angle * Math.PI) / 180) * radius
+      const dy     = Math.sin((angle * Math.PI) / 180) * radius
+      const size   = 6 + Math.random() * 6
+      const color  = PARTICLE_COLORS[i % PARTICLE_COLORS.length]
+      const dur    = 0.8 + Math.random() * 0.4
+      return { i, dx, dy, size, color, dur }
+    })
+  }, [])
+
   return (
     <>
-      {Array.from({ length: 20 }, (_, i) => {
-        const angle  = (i / 20) * 360
-        const radius = 90 + Math.random() * 60
-        const dx = Math.cos((angle * Math.PI) / 180) * radius
-        const dy = Math.sin((angle * Math.PI) / 180) * radius
-        const particleColor = PARTICLE_COLORS[i % PARTICLE_COLORS.length]
-        return (
-          <motion.div
-            key={i}
-            className="absolute rounded-full pointer-events-none"
-            style={{
-              width:  6 + Math.random() * 6,
-              height: 6 + Math.random() * 6,
-              background: particleColor,
-              top: '50%',
-              left: '50%',
-              originX: '50%',
-              originY: '50%',
-            }}
-            initial={{ x: 0, y: 0, opacity: 1, scale: 1 }}
-            animate={{ x: dx, y: dy, opacity: 0, scale: 0.3 }}
-            transition={{ duration: 0.8 + Math.random() * 0.4, ease: 'easeOut', delay: 0.1 + i * 0.02 }}
-          />
-        )
-      })}
+      {particles.map((p) => (
+        <motion.div
+          key={p.i}
+          className="absolute rounded-full pointer-events-none"
+          style={{
+            width: p.size,
+            height: p.size,
+            background: p.color,
+            top: '50%',
+            left: '50%',
+            originX: '50%',
+            originY: '50%',
+          }}
+          initial={{ x: 0, y: 0, opacity: 1, scale: 1 }}
+          animate={{ x: p.dx, y: p.dy, opacity: 0, scale: 0.3 }}
+          transition={{ duration: p.dur, ease: 'easeOut', delay: 0.1 + p.i * 0.02 }}
+        />
+      ))}
     </>
   )
 }
@@ -144,7 +150,7 @@ export default function StreakMilestoneModal() {
           >
             {/* Particle burst */}
             <div className="absolute inset-0 pointer-events-none overflow-hidden">
-              <Particles color={config.color} />
+              <Particles />
             </div>
 
             {/* Big emoji */}

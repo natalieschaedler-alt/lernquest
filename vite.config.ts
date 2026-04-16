@@ -27,7 +27,11 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // Include .mjs (ES module workers like pdfjs) and .wasm so the PWA
+        // precaches everything the app needs offline.
+        globPatterns: ['**/*.{js,mjs,css,html,ico,png,svg,woff2,wasm}'],
+        // PDF worker chunk can exceed the default 2 MB limit.
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com/,
@@ -51,6 +55,16 @@ export default defineConfig({
             options: {
               cacheName: 'supabase',
               networkTimeoutSeconds: 10,
+            },
+          },
+          // Fallback for pdfjs chunks/worker that weren't in the precache
+          // manifest (e.g. dev mode or version mismatch).
+          {
+            urlPattern: /pdf\.worker\.min.*\.(mjs|js)$/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'pdfjs-worker',
+              expiration: { maxEntries: 5, maxAgeSeconds: 60 * 60 * 24 * 30 },
             },
           },
         ],

@@ -12,6 +12,9 @@ import Wortwirbel from '../components/games/Wortwirbel'
 import OrakelKristall from '../components/games/OrakelKristall'
 import MemoryKarten from '../components/games/MemoryKarten'
 import LueckentextSpiel from '../components/games/LueckentextSpiel'
+import RunenStein from '../components/rooms/RunenStein'
+import Ketten from '../components/rooms/Ketten'
+import SchildBlock from '../components/rooms/SchildBlock'
 import WorldBackground from '../components/WorldBackground'
 import {
   pointsForDifficulty,
@@ -30,6 +33,52 @@ function getGameForQuestion(q: Question | undefined): GameType | null {
   if (type === 'tf') return 'orakel'
   if (type === 'fillblank') return 'lueckentext'
   return 'wortwirbel'
+}
+
+// ── Dungeon queue builder ──────────────────────────────────────
+// Produces a flat sequence of items: special rooms (block) + individual questions.
+
+type QueueItem =
+  | { kind: 'room'; type: 'runenstein' | 'ketten' | 'schild'; questions: Question[] }
+  | { kind: 'question'; question: Question }
+
+function buildDungeonQueue(questions: Question[]): QueueItem[] {
+  const mc    = questions.filter(q => q.question_type === 'mc' || !q.question_type)
+  const other = questions.filter(q => q.question_type === 'tf' || q.question_type === 'fillblank')
+
+  const queue: QueueItem[] = []
+  let mi = 0
+
+  // RunenStein: first 4 MC questions
+  if (mc.length >= 4) {
+    queue.push({ kind: 'room', type: 'runenstein', questions: mc.slice(mi, mi + 4) })
+    mi += 4
+  }
+
+  // TF + fillblank questions run individually
+  for (const q of other) queue.push({ kind: 'question', question: q })
+
+  // SchildBlock: next 5 MC questions
+  if (mc.length - mi >= 5) {
+    queue.push({ kind: 'room', type: 'schild', questions: mc.slice(mi, mi + 5) })
+    mi += 5
+  }
+
+  // Ketten: final 5 MC questions (transitions to boss)
+  if (mc.length - mi >= 5) {
+    queue.push({ kind: 'room', type: 'ketten', questions: mc.slice(mi, mi + 5) })
+    mi += 5
+  }
+
+  // Remaining MC questions individually
+  while (mi < mc.length) { queue.push({ kind: 'question', question: mc[mi++] }) }
+
+  // Fallback: no special rooms
+  if (queue.length === 0) {
+    for (const q of questions) queue.push({ kind: 'question', question: q })
+  }
+
+  return queue
 }
 
 export default function DungeonPage() {
@@ -77,10 +126,19 @@ export default function DungeonPage() {
   )
 
   const hasMemory = memoryQuestions.length > 0
-  const totalSteps = (hasMemory ? 1 : 0) + nonMemoryQuestions.length
+  const totalSteps = (hasMemory ? 1 : 0) + dungeonQueue.length
 
   const [memoryDone, setMemoryDone] = useState(!hasMemory)
-  const [nonMemoryIndex, setNonMemoryIndex] = useState(0)
+
+  // ── Dungeon queue (replaces flat nonMemoryIndex) ──────────────
+  const dungeonQueue = useMemo<QueueItem[]>(() => buildDungeonQueue(nonMemoryQuestions), [nonMemoryQuestions])
+  const [queueIdx, setQueueIdx] = useState(0)
+
+  const activeItem    = dungeonQueue[queueIdx]
+  const currentQuestion: Question | undefined =
+    activeItem?.kind === 'question' ? activeItem.question : undefined
+
+  const [nonMemoryIndex, setNonMemoryIndex] = useState(0)  // kept for SM-2 / mistake tracking
   const [answered, setAnswered] = useState(false)
   const [combo, setCombo] = useState(0)
   const [showReward, setShowReward] = useState(false)
@@ -136,10 +194,8 @@ export default function DungeonPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nonMemoryIndex]) // intentionally narrow
 
-  const currentStep = !memoryDone && hasMemory ? 0 : (hasMemory ? 1 : 0) + nonMemoryIndex
+  const currentStep = !memoryDone && hasMemory ? 0 : (hasMemory ? 1 : 0) + queueIdx
   const progress = totalSteps > 0 ? (currentStep / totalSteps) * 100 : 0
-
-  const currentQuestion: Question | undefined = nonMemoryQuestions[nonMemoryIndex]
 
   const handleNext = useCallback((correct: boolean, points: number) => {
     if (answered) return
@@ -147,14 +203,16 @@ export default function DungeonPage() {
     answerQuestion(correct, points)
 
     // Spaced repetition: persist wrong answers for logged-in users
-    if (!correct && user && currentWorldId && !currentWorldId.startsWith('local-')) {
-      void saveMistake(user.id, currentWorldId, nonMemoryIndex)
+    const qPos = currentQuestion ? questions.findIndex(q => q === currentQuestion) : -1
+    if (!correct && user && currentWorldId && !currentWorldId.startsWith('local-') && qPos >= 0) {
+      void saveMistake(user.id, currentWorldId, qPos)
     }
 
     // ── SM-2 tracking (before correct/wrong split) ─────────────
     const elapsed = Date.now() - questionStartRef.current
     const fast    = elapsed < FAST_THRESHOLD_MS
-    const originalIndex = questions.findIndex((q) => q === currentQuestion)
+    // Map currentQuestion back to the original questions array for SM-2
+    const originalIndex = currentQuestion ? questions.findIndex((q) => q === currentQuestion) : -1
     if (originalIndex >= 0) {
       recordQuestionResult(originalIndex, correct, fast)
     }
@@ -203,14 +261,15 @@ export default function DungeonPage() {
         navigate('/gameover', { replace: true })
         return
       }
-      if (nonMemoryIndex >= nonMemoryQuestions.length - 1) {
+      if (queueIdx >= dungeonQueue.length - 1) {
         navigate('/boss', { replace: true })
         return
       }
-      setNonMemoryIndex((prev) => prev + 1)
+      setQueueIdx((prev) => prev + 1)
+      setNonMemoryIndex((prev) => prev + 1) // keep in sync for legacy SM-2 path
       setAnswered(false)
     }, 1200)
-  }, [answered, answerQuestion, user, currentWorldId, nonMemoryIndex, combo, t, addXP, completeDailyChallenge, navigate, nonMemoryQuestions.length, trackActivity, isGoldenQuestion, tutorialDone, showTip, questions, currentQuestion, recordQuestionResult])
+  }, [answered, answerQuestion, user, currentWorldId, queueIdx, combo, t, addXP, completeDailyChallenge, navigate, dungeonQueue.length, trackActivity, isGoldenQuestion, tutorialDone, showTip, questions, currentQuestion, recordQuestionResult])
 
   const handleMemoryComplete = useCallback((memScore: number) => {
     addXP(memScore)
@@ -236,15 +295,37 @@ export default function DungeonPage() {
     handleNext(correct, points ?? 10)
   }, [handleNext])
 
+  // ── Room completion callbacks ─────────────────────────────────
+  const handleRoomComplete = useCallback((roomScore: number) => {
+    addXP(roomScore)
+    if (queueIdx >= dungeonQueue.length - 1) {
+      navigate('/boss', { replace: true })
+      return
+    }
+    setQueueIdx((prev) => prev + 1)
+    setAnswered(false)
+  }, [addXP, queueIdx, dungeonQueue.length, navigate])
+
+  // Ketten always transitions directly to boss
+  const handleKettenComplete = useCallback((roomScore: number) => {
+    addXP(roomScore)
+    navigate('/boss', { replace: true })
+  }, [addXP, navigate])
+
+  // SchildBlock hit = lose 1 HP
+  const handleShieldHit = useCallback(() => {
+    answerQuestion(false, 0)
+  }, [answerQuestion])
+
   if (questions.length === 0) return null
 
-  // Keine Non-Memory-Fragen übrig → Boss
-  if (memoryDone && !currentQuestion) {
+  // All queue items exhausted → Boss
+  if (memoryDone && queueIdx >= dungeonQueue.length) {
     navigate('/boss', { replace: true })
     return null
   }
 
-  const gameType = getGameForQuestion(currentQuestion)
+  const gameType  = getGameForQuestion(currentQuestion)
   const roomLabel = t('game.room', { current: currentStep + 1, total: totalSteps })
 
   return (
@@ -347,55 +428,82 @@ export default function DungeonPage() {
       <main className="flex-1 flex items-center justify-center pt-20 pb-8 px-4">
         <AnimatePresence mode="wait">
           <motion.div
-            key={!memoryDone ? 'memory' : `nm-${nonMemoryIndex}`}
+            key={!memoryDone ? 'memory' : `q-${queueIdx}`}
             className="w-full max-w-lg"
             initial={{ x: 100, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: -100, opacity: 0 }}
             transition={{ duration: 0.3 }}
           >
-            {/* Golden question banner */}
-            {isGoldenQuestion && !memoryDone && (
-              <motion.div
-                className="flex items-center justify-center gap-1.5 mb-2 py-1 rounded-xl font-body font-bold text-xs"
-                style={{ background: 'rgba(255,215,0,0.12)', color: '#FFD700', border: '1px solid rgba(255,215,0,0.35)' }}
-                initial={{ opacity: 0, y: -6 }}
-                animate={{ opacity: 1, y: 0 }}
-              >
-                ✨ {t('xp.golden_question')}
-              </motion.div>
-            )}
-            <div
-              style={isGoldenQuestion && !memoryDone ? {
-                boxShadow: '0 0 28px rgba(255,215,0,0.35)',
-                borderRadius: 16,
-                outline: '1.5px solid rgba(255,215,0,0.45)',
-              } : {}}
-            >
-              {!memoryDone && hasMemory ? (
-                <MemoryKarten
-                  questions={memoryQuestions}
-                  primaryColor={worldTheme.primaryColor}
-                  onComplete={handleMemoryComplete}
-                />
-              ) : currentQuestion && gameType === 'orakel' ? (
-                <OrakelKristall
-                  questions={[currentQuestion]}
-                  onComplete={handleOrakelComplete}
-                />
-              ) : currentQuestion && gameType === 'lueckentext' ? (
-                <LueckentextSpiel
-                  questions={[currentQuestion]}
-                  primaryColor={worldTheme.primaryColor}
-                  onComplete={handleLueckentextComplete}
-                />
-              ) : currentQuestion ? (
-                <Wortwirbel
-                  question={currentQuestion}
-                  onAnswer={handleWortwirbel}
-                />
-              ) : null}
-            </div>
+            {!memoryDone && hasMemory ? (
+              /* ── Memory phase ── */
+              <MemoryKarten
+                questions={memoryQuestions}
+                primaryColor={worldTheme.primaryColor}
+                onComplete={handleMemoryComplete}
+              />
+            ) : activeItem?.kind === 'room' && activeItem.type === 'runenstein' ? (
+              /* ── RunenStein room ── */
+              <RunenStein
+                questions={activeItem.questions}
+                worldTheme={worldTheme}
+                onComplete={handleRoomComplete}
+              />
+            ) : activeItem?.kind === 'room' && activeItem.type === 'schild' ? (
+              /* ── SchildBlock room ── */
+              <SchildBlock
+                questions={activeItem.questions}
+                worldTheme={worldTheme}
+                onComplete={handleRoomComplete}
+                onHit={handleShieldHit}
+              />
+            ) : activeItem?.kind === 'room' && activeItem.type === 'ketten' ? (
+              /* ── Ketten room (directly to boss) ── */
+              <Ketten
+                questions={activeItem.questions}
+                worldTheme={worldTheme}
+                onComplete={handleKettenComplete}
+              />
+            ) : currentQuestion ? (
+              /* ── Normal question ── */
+              <>
+                {isGoldenQuestion && (
+                  <motion.div
+                    className="flex items-center justify-center gap-1.5 mb-2 py-1 rounded-xl font-body font-bold text-xs"
+                    style={{ background: 'rgba(255,215,0,0.12)', color: '#FFD700', border: '1px solid rgba(255,215,0,0.35)' }}
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                  >
+                    ✨ {t('xp.golden_question')}
+                  </motion.div>
+                )}
+                <div
+                  style={isGoldenQuestion ? {
+                    boxShadow: '0 0 28px rgba(255,215,0,0.35)',
+                    borderRadius: 16,
+                    outline: '1.5px solid rgba(255,215,0,0.45)',
+                  } : {}}
+                >
+                  {gameType === 'orakel' ? (
+                    <OrakelKristall
+                      questions={[currentQuestion]}
+                      onComplete={handleOrakelComplete}
+                    />
+                  ) : gameType === 'lueckentext' ? (
+                    <LueckentextSpiel
+                      questions={[currentQuestion]}
+                      primaryColor={worldTheme.primaryColor}
+                      onComplete={handleLueckentextComplete}
+                    />
+                  ) : (
+                    <Wortwirbel
+                      question={currentQuestion}
+                      onAnswer={handleWortwirbel}
+                    />
+                  )}
+                </div>
+              </>
+            ) : null}
           </motion.div>
         </AnimatePresence>
       </main>

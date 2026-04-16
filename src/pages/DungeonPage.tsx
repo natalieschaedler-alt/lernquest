@@ -15,6 +15,10 @@ import LueckentextSpiel from '../components/games/LueckentextSpiel'
 import RunenStein from '../components/rooms/RunenStein'
 import Ketten from '../components/rooms/Ketten'
 import SchildBlock from '../components/rooms/SchildBlock'
+import LavaBridge from '../components/rooms/LavaBridge'
+import RunenCasting from '../components/rooms/RunenCasting'
+import BossDodge from '../components/rooms/BossDodge'
+import FragePuzzle from '../components/rooms/FragePuzzle'
 import WorldBackground from '../components/WorldBackground'
 import {
   pointsForDifficulty,
@@ -24,6 +28,7 @@ import { XpFloat } from '../components/ui/XpBar'
 import { saveMistake } from '../lib/database'
 import TutorialTooltip from '../components/ui/TutorialTooltip'
 import HelpModal from '../components/ui/HelpModal'
+import { shuffleArray } from '../utils/shuffleArray'
 
 type GameType = 'wortwirbel' | 'orakel' | 'lueckentext'
 
@@ -36,44 +41,67 @@ function getGameForQuestion(q: Question | undefined): GameType | null {
 }
 
 // ── Dungeon queue builder ──────────────────────────────────────
-// Produces a flat sequence of items: special rooms (block) + individual questions.
+// Randomly selects 2-3 special rooms per session from all 7 available types,
+// then fills remaining questions individually.
+
+type RoomType = 'runenstein' | 'ketten' | 'schild' | 'lavabridge' | 'runencasting' | 'bossdodge' | 'fragepuzzle'
 
 type QueueItem =
-  | { kind: 'room'; type: 'runenstein' | 'ketten' | 'schild'; questions: Question[] }
+  | { kind: 'room'; type: RoomType; questions: Question[] }
   | { kind: 'question'; question: Question }
 
+interface RoomSpec { type: RoomType; need: number; src: 'mc' | 'tf' | 'fill' }
+
+const MC_ROOM_SPECS: RoomSpec[] = [
+  { type: 'runenstein',  need: 4, src: 'mc' },
+  { type: 'lavabridge',  need: 4, src: 'mc' },
+  { type: 'schild',      need: 5, src: 'mc' },
+  { type: 'ketten',      need: 5, src: 'mc' },
+  { type: 'runencasting', need: 3, src: 'mc' },
+  { type: 'bossdodge',   need: 3, src: 'mc' },
+]
+
+const TF_ROOM_SPECS: RoomSpec[] = [
+  { type: 'fragepuzzle', need: 3, src: 'tf' },
+]
+
 function buildDungeonQueue(questions: Question[]): QueueItem[] {
-  const mc    = questions.filter(q => q.question_type === 'mc' || !q.question_type)
-  const other = questions.filter(q => q.question_type === 'tf' || q.question_type === 'fillblank')
+  const mc   = questions.filter(q => q.question_type === 'mc' || !q.question_type)
+  const tf   = questions.filter(q => q.question_type === 'tf')
+  const fill = questions.filter(q => q.question_type === 'fillblank')
 
   const queue: QueueItem[] = []
-  let mi = 0
+  let mi = 0   // MC consumed
+  let ti = 0   // TF consumed
 
-  // RunenStein: first 4 MC questions
-  if (mc.length >= 4) {
-    queue.push({ kind: 'room', type: 'runenstein', questions: mc.slice(mi, mi + 4) })
-    mi += 4
+  // Randomise MC room order; pick rooms while budget allows (max 3 MC rooms)
+  const shuffledMC = shuffleArray(MC_ROOM_SPECS)
+  let mcRooms = 0
+  for (const spec of shuffledMC) {
+    if (mcRooms >= 3) break
+    if (mc.length - mi >= spec.need) {
+      queue.push({ kind: 'room', type: spec.type, questions: mc.slice(mi, mi + spec.need) })
+      mi += spec.need
+      mcRooms++
+    }
   }
 
-  // TF + fillblank questions run individually
-  for (const q of other) queue.push({ kind: 'question', question: q })
-
-  // SchildBlock: next 5 MC questions
-  if (mc.length - mi >= 5) {
-    queue.push({ kind: 'room', type: 'schild', questions: mc.slice(mi, mi + 5) })
-    mi += 5
+  // TF puzzle room if enough TF questions
+  if (tf.length - ti >= TF_ROOM_SPECS[0].need) {
+    queue.push({ kind: 'room', type: 'fragepuzzle', questions: tf.slice(ti, ti + TF_ROOM_SPECS[0].need) })
+    ti += TF_ROOM_SPECS[0].need
   }
 
-  // Ketten: final 5 MC questions (transitions to boss)
-  if (mc.length - mi >= 5) {
-    queue.push({ kind: 'room', type: 'ketten', questions: mc.slice(mi, mi + 5) })
-    mi += 5
-  }
+  // Remaining MC individually
+  while (mi < mc.length) queue.push({ kind: 'question', question: mc[mi++] })
 
-  // Remaining MC questions individually
-  while (mi < mc.length) { queue.push({ kind: 'question', question: mc[mi++] }) }
+  // Remaining TF individually
+  while (ti < tf.length) queue.push({ kind: 'question', question: tf[ti++] })
 
-  // Fallback: no special rooms
+  // Fill-blank individually
+  for (const q of fill) queue.push({ kind: 'question', question: q })
+
+  // Absolute fallback
   if (queue.length === 0) {
     for (const q of questions) queue.push({ kind: 'question', question: q })
   }
@@ -452,6 +480,38 @@ export default function DungeonPage() {
             ) : activeItem?.kind === 'room' && activeItem.type === 'schild' ? (
               /* ── SchildBlock room ── */
               <SchildBlock
+                questions={activeItem.questions}
+                worldTheme={worldTheme}
+                onComplete={handleRoomComplete}
+                onHit={handleShieldHit}
+              />
+            ) : activeItem?.kind === 'room' && activeItem.type === 'lavabridge' ? (
+              /* ── LavaBridge room ── */
+              <LavaBridge
+                questions={activeItem.questions}
+                worldTheme={worldTheme}
+                onComplete={handleRoomComplete}
+                onHit={handleShieldHit}
+              />
+            ) : activeItem?.kind === 'room' && activeItem.type === 'runencasting' ? (
+              /* ── RunenCasting drag-to-spell room ── */
+              <RunenCasting
+                questions={activeItem.questions}
+                worldTheme={worldTheme}
+                onComplete={handleRoomComplete}
+                onHit={handleShieldHit}
+              />
+            ) : activeItem?.kind === 'room' && activeItem.type === 'bossdodge' ? (
+              /* ── BossDodge reflex room ── */
+              <BossDodge
+                questions={activeItem.questions}
+                worldTheme={worldTheme}
+                onComplete={handleRoomComplete}
+                onHit={handleShieldHit}
+              />
+            ) : activeItem?.kind === 'room' && activeItem.type === 'fragepuzzle' ? (
+              /* ── FragePuzzle word-order room ── */
+              <FragePuzzle
                 questions={activeItem.questions}
                 worldTheme={worldTheme}
                 onComplete={handleRoomComplete}

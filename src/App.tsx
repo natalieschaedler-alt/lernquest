@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import LoadingSpinner from './components/ui/LoadingSpinner'
 import CookieBanner from './components/ui/CookieBanner'
 import ErrorBoundary from './components/ErrorBoundary'
+import { FeelProvider } from './components/FeelProvider'
 import StreakMilestoneModal from './components/ui/StreakMilestoneModal'
 import StreakLostModal from './components/ui/StreakLostModal'
 import LevelUpOverlay from './components/ui/LevelUpOverlay'
@@ -66,6 +67,7 @@ function SessionWatcher() {
 export default function App() {
   return (
     <ErrorBoundary>
+      <FeelProvider>
       <Suspense fallback={<LoadingSpinner />}>
         <SessionWatcher />
         <DailyBoxChecker />
@@ -95,6 +97,7 @@ export default function App() {
         <LevelUpOverlay />
         <MysteryBoxModal />
       </Suspense>
+      </FeelProvider>
     </ErrorBoundary>
   )
 }

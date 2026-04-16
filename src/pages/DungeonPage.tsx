@@ -19,6 +19,10 @@ import LavaBridge from '../components/rooms/LavaBridge'
 import RunenCasting from '../components/rooms/RunenCasting'
 import BossDodge from '../components/rooms/BossDodge'
 import FragePuzzle from '../components/rooms/FragePuzzle'
+import SpeedRun from '../components/rooms/SpeedRun'
+import MemoryTrail from '../components/rooms/MemoryTrail'
+import TrueFalseSwipe from '../components/rooms/TrueFalseSwipe'
+import OrakelStatue from '../components/rooms/OrakelStatue'
 import WorldBackground from '../components/WorldBackground'
 import {
   pointsForDifficulty,
@@ -44,7 +48,7 @@ function getGameForQuestion(q: Question | undefined): GameType | null {
 // Randomly selects 2-3 special rooms per session from all 7 available types,
 // then fills remaining questions individually.
 
-type RoomType = 'runenstein' | 'ketten' | 'schild' | 'lavabridge' | 'runencasting' | 'bossdodge' | 'fragepuzzle'
+type RoomType = 'runenstein' | 'ketten' | 'schild' | 'lavabridge' | 'runencasting' | 'bossdodge' | 'fragepuzzle' | 'speedrun' | 'memorytrail' | 'truefalsewipe' | 'orakelstatue'
 
 type QueueItem =
   | { kind: 'room'; type: RoomType; questions: Question[] }
@@ -53,16 +57,20 @@ type QueueItem =
 interface RoomSpec { type: RoomType; need: number; src: 'mc' | 'tf' | 'fill' }
 
 const MC_ROOM_SPECS: RoomSpec[] = [
-  { type: 'runenstein',  need: 4, src: 'mc' },
-  { type: 'lavabridge',  need: 4, src: 'mc' },
-  { type: 'schild',      need: 5, src: 'mc' },
-  { type: 'ketten',      need: 5, src: 'mc' },
+  { type: 'runenstein',   need: 4, src: 'mc' },
+  { type: 'lavabridge',   need: 4, src: 'mc' },
+  { type: 'schild',       need: 5, src: 'mc' },
+  { type: 'ketten',       need: 5, src: 'mc' },
   { type: 'runencasting', need: 3, src: 'mc' },
-  { type: 'bossdodge',   need: 3, src: 'mc' },
+  { type: 'bossdodge',    need: 3, src: 'mc' },
+  { type: 'speedrun',     need: 3, src: 'mc' },
+  { type: 'orakelstatue', need: 3, src: 'mc' },
 ]
 
 const TF_ROOM_SPECS: RoomSpec[] = [
-  { type: 'fragepuzzle', need: 3, src: 'tf' },
+  { type: 'fragepuzzle',   need: 3, src: 'tf' },
+  { type: 'truefalsewipe', need: 4, src: 'tf' },
+  { type: 'memorytrail',   need: 3, src: 'tf' },
 ]
 
 function buildDungeonQueue(questions: Question[]): QueueItem[] {
@@ -86,10 +94,14 @@ function buildDungeonQueue(questions: Question[]): QueueItem[] {
     }
   }
 
-  // TF puzzle room if enough TF questions
-  if (tf.length - ti >= TF_ROOM_SPECS[0].need) {
-    queue.push({ kind: 'room', type: 'fragepuzzle', questions: tf.slice(ti, ti + TF_ROOM_SPECS[0].need) })
-    ti += TF_ROOM_SPECS[0].need
+  // Randomise TF room order; pick at most 1 TF room per session
+  const shuffledTF = shuffleArray(TF_ROOM_SPECS)
+  for (const spec of shuffledTF) {
+    if (tf.length - ti >= spec.need) {
+      queue.push({ kind: 'room', type: spec.type, questions: tf.slice(ti, ti + spec.need) })
+      ti += spec.need
+      break  // only 1 TF room per session
+    }
   }
 
   // Remaining MC individually
@@ -512,6 +524,38 @@ export default function DungeonPage() {
             ) : activeItem?.kind === 'room' && activeItem.type === 'fragepuzzle' ? (
               /* ── FragePuzzle word-order room ── */
               <FragePuzzle
+                questions={activeItem.questions}
+                worldTheme={worldTheme}
+                onComplete={handleRoomComplete}
+                onHit={handleShieldHit}
+              />
+            ) : activeItem?.kind === 'room' && activeItem.type === 'speedrun' ? (
+              /* ── SpeedRun adrenalin room ── */
+              <SpeedRun
+                questions={activeItem.questions}
+                worldTheme={worldTheme}
+                onComplete={handleRoomComplete}
+                onHit={handleShieldHit}
+              />
+            ) : activeItem?.kind === 'room' && activeItem.type === 'memorytrail' ? (
+              /* ── MemoryTrail sequence room ── */
+              <MemoryTrail
+                questions={activeItem.questions}
+                worldTheme={worldTheme}
+                onComplete={handleRoomComplete}
+                onHit={handleShieldHit}
+              />
+            ) : activeItem?.kind === 'room' && activeItem.type === 'truefalsewipe' ? (
+              /* ── TrueFalseSwipe swipe room ── */
+              <TrueFalseSwipe
+                questions={activeItem.questions}
+                worldTheme={worldTheme}
+                onComplete={handleRoomComplete}
+                onHit={handleShieldHit}
+              />
+            ) : activeItem?.kind === 'room' && activeItem.type === 'orakelstatue' ? (
+              /* ── OrakelStatue atmosphere room ── */
+              <OrakelStatue
                 questions={activeItem.questions}
                 worldTheme={worldTheme}
                 onComplete={handleRoomComplete}

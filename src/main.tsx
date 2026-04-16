@@ -7,8 +7,10 @@ import App from './App'
 import './i18n'
 import './index.css'
 
-// Show a reload prompt when a new service worker version is available
-registerSW({
+// Show a reload prompt when a new service worker version is available.
+// updateSW(true) calls skipWaiting on the waiting SW first, then reloads —
+// without this the reload just serves the old cached version again.
+const updateSW = registerSW({
   onNeedRefresh() {
     toast(
       (toastInstance) => (
@@ -17,7 +19,7 @@ registerSW({
           <button
             onClick={() => {
               toast.dismiss(toastInstance.id)
-              window.location.reload()
+              void updateSW(true)
             }}
             style={{
               background: '#6C3CE1',

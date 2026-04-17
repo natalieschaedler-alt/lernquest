@@ -14,30 +14,53 @@ const GoogleIcon = () => (
   </svg>
 )
 
+type Mode = 'choose' | 'magic' | 'password'
+
 export default function AuthPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const [showEmail, setShowEmail] = useState(false)
-  const [email, setEmail] = useState('')
-  const [sent, setSent] = useState(false)
+  const [mode, setMode]       = useState<Mode>('choose')
+  const [email, setEmail]     = useState('')
+  const [password, setPassword] = useState('')
+  const [sent, setSent]       = useState(false)
   const [loading, setLoading] = useState(false)
 
   const handleGoogle = () => {
     void supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.origin + '/dungeon' },
+      options: { redirectTo: window.location.origin + '/dashboard' },
     })
   }
 
   const handleMagicLink = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
-    await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: window.location.origin },
+    const { error } = await supabase.auth.signInWithOtp({
+      email: email.trim(),
+      options: { emailRedirectTo: window.location.origin + '/dashboard' },
     })
     setLoading(false)
-    setSent(true)
+    if (error) {
+      toast.error(error.message)
+    } else {
+      setSent(true)
+    }
+  }
+
+  const handlePasswordLogin = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    })
+    setLoading(false)
+    if (error) {
+      toast.error(t('auth.login_failed', 'Login fehlgeschlagen: ') + error.message)
+    } else {
+      toast.success(t('auth.login_success', 'Eingeloggt!'))
+      void navigate('/dashboard')
+    }
   }
 
   return (
@@ -57,7 +80,8 @@ export default function AuthPage() {
 
         <div style={{ height: '32px' }} />
 
-        {!showEmail && !sent && (
+        {/* ─── Choose mode ─── */}
+        {mode === 'choose' && !sent && (
           <div className="flex flex-col gap-3">
             <button
               type="button"
@@ -71,11 +95,20 @@ export default function AuthPage() {
 
             <button
               type="button"
-              onClick={() => setShowEmail(true)}
+              onClick={() => setMode('magic')}
               className="w-full font-body font-semibold text-white rounded-xl py-3 px-4 cursor-pointer border-none"
               style={{ background: '#6C3CE1', fontSize: '15px' }}
             >
-              {t('auth.sign_in_email')}
+              ✨ {t('auth.sign_in_email', 'Magic-Link per Email')}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setMode('password')}
+              className="w-full font-body font-semibold text-white rounded-xl py-3 px-4 cursor-pointer border-none"
+              style={{ background: '#1A1A2E', border: '1px solid #0F3460', fontSize: '15px' }}
+            >
+              🔐 {t('auth.sign_in_password', 'Passwort-Login')}
             </button>
 
             <button
@@ -92,7 +125,8 @@ export default function AuthPage() {
           </div>
         )}
 
-        {showEmail && !sent && (
+        {/* ─── Magic link ─── */}
+        {mode === 'magic' && !sent && (
           <form onSubmit={(e) => void handleMagicLink(e)} className="flex flex-col gap-3">
             <input
               type="email"
@@ -101,11 +135,7 @@ export default function AuthPage() {
               placeholder={t('auth.email_placeholder')}
               required
               className="w-full font-body text-white rounded-xl px-4 py-3 outline-none"
-              style={{
-                background: '#1A1A2E',
-                border: '1px solid #0F3460',
-                fontSize: '15px',
-              }}
+              style={{ background: '#1A1A2E', border: '1px solid #0F3460', fontSize: '15px' }}
             />
             <button
               type="submit"
@@ -117,19 +147,62 @@ export default function AuthPage() {
             </button>
             <button
               type="button"
-              onClick={() => setShowEmail(false)}
+              onClick={() => setMode('choose')}
               className="w-full font-body text-sm cursor-pointer border-none bg-transparent"
               style={{ color: 'rgba(255,255,255,0.4)', fontSize: '14px' }}
             >
               {t('auth.back')}
             </button>
+          </form>
+        )}
+
+        {/* ─── Password login ─── */}
+        {mode === 'password' && (
+          <form onSubmit={(e) => void handlePasswordLogin(e)} className="flex flex-col gap-3">
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder={t('auth.email_placeholder', 'E-Mail')}
+              required
+              autoComplete="email"
+              className="w-full font-body text-white rounded-xl px-4 py-3 outline-none"
+              style={{ background: '#1A1A2E', border: '1px solid #0F3460', fontSize: '15px' }}
+            />
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder={t('auth.password_placeholder', 'Passwort')}
+              required
+              autoComplete="current-password"
+              minLength={6}
+              className="w-full font-body text-white rounded-xl px-4 py-3 outline-none"
+              style={{ background: '#1A1A2E', border: '1px solid #0F3460', fontSize: '15px' }}
+            />
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full font-body font-semibold text-white rounded-xl py-3 px-4 cursor-pointer border-none"
+              style={{ background: '#6C3CE1', fontSize: '15px', opacity: loading ? 0.7 : 1 }}
+            >
+              {loading ? t('auth.sending', 'Sende…') : t('auth.sign_in_now', 'Einloggen')}
+            </button>
             <button
               type="button"
               onClick={() => void navigate('/auth/reset')}
-              className="w-full font-body text-xs cursor-pointer border-none bg-transparent mt-1"
-              style={{ color: 'rgba(255,255,255,0.35)', fontSize: '12px' }}
+              className="w-full font-body text-xs cursor-pointer border-none bg-transparent"
+              style={{ color: 'rgba(255,255,255,0.4)' }}
             >
-              Passwort vergessen?
+              {t('auth.forgot_password', 'Passwort vergessen?')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('choose')}
+              className="w-full font-body text-sm cursor-pointer border-none bg-transparent"
+              style={{ color: 'rgba(255,255,255,0.4)', fontSize: '14px' }}
+            >
+              {t('auth.back')}
             </button>
           </form>
         )}

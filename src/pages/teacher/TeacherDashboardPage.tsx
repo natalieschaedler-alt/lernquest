@@ -36,6 +36,7 @@ import type {
 } from '../../lib/teacherDb'
 import LoadingSpinner from '../../components/ui/LoadingSpinner'
 import BulkInviteModal from '../../components/teacher/BulkInviteModal'
+import CreateStudentModal from '../../components/teacher/CreateStudentModal'
 
 // ── Typen ─────────────────────────────────────────────────────
 
@@ -111,6 +112,7 @@ function ClassesTab({ teacherId, t }: ClassesTabProps) {
   const [memberCounts, setMemberCounts] = useState<Record<string, number>>({})
   const [expandedId, setExpandedId]   = useState<string | null>(null)
   const [bulkInviteCls, setBulkInviteCls] = useState<TeacherClass | null>(null)
+  const [createStudentCls, setCreateStudentCls] = useState<TeacherClass | null>(null)
   const [students, setStudents]       = useState<ClassStudent[]>([])
   const [studentsLoading, setStudentsLoading] = useState(false)
   const [sortBy, setSortBy]           = useState<StudentSort>('activity')
@@ -269,10 +271,17 @@ function ClassesTab({ teacherId, t }: ClassesTabProps) {
                   </button>
                   <button
                     type="button"
+                    onClick={() => setCreateStudentCls(cls)}
+                    className="font-body text-xs text-purple-400 hover:text-white transition-colors cursor-pointer border-none bg-transparent whitespace-nowrap"
+                  >
+                    + Schüler
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setBulkInviteCls(cls)}
                     className="font-body text-xs text-purple-400 hover:text-white transition-colors cursor-pointer border-none bg-transparent whitespace-nowrap"
                   >
-                    📋 Massen-Import
+                    📋 Liste
                   </button>
                 </div>
 
@@ -393,6 +402,21 @@ function ClassesTab({ teacherId, t }: ClassesTabProps) {
           cls={bulkInviteCls}
           open={!!bulkInviteCls}
           onClose={() => setBulkInviteCls(null)}
+        />
+      )}
+
+      {/* Create single student modal */}
+      {createStudentCls && (
+        <CreateStudentModal
+          cls={createStudentCls}
+          open={!!createStudentCls}
+          onClose={() => setCreateStudentCls(null)}
+          onCreated={() => {
+            // Refresh member count
+            getClassMemberCount(createStudentCls.id).then((n) => {
+              setMemberCounts((prev) => ({ ...prev, [createStudentCls.id]: n }))
+            })
+          }}
         />
       )}
     </div>

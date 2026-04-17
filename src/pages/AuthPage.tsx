@@ -14,13 +14,16 @@ const GoogleIcon = () => (
   </svg>
 )
 
-type Mode = 'choose' | 'magic' | 'password'
+type Mode = 'choose' | 'magic' | 'password' | 'student'
+
+const STUDENT_EMAIL_DOMAIN = 'students.learnquest.local'
 
 export default function AuthPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [mode, setMode]       = useState<Mode>('choose')
   const [email, setEmail]     = useState('')
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [sent, setSent]       = useState(false)
   const [loading, setLoading] = useState(false)
@@ -63,6 +66,29 @@ export default function AuthPage() {
     }
   }
 
+  const handleStudentLogin = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    // Transform username → fake email (internal format only)
+    const normalised = username.trim().toLowerCase()
+    if (!/^[a-z0-9_-]{3,20}$/.test(normalised)) {
+      toast.error('Username: 3-20 Zeichen (a-z, 0-9, _, -)')
+      setLoading(false)
+      return
+    }
+    const { error } = await supabase.auth.signInWithPassword({
+      email:    `${normalised}@${STUDENT_EMAIL_DOMAIN}`,
+      password,
+    })
+    setLoading(false)
+    if (error) {
+      toast.error('Login fehlgeschlagen – Username oder Passwort falsch.')
+    } else {
+      toast.success('Willkommen!')
+      void navigate('/dashboard')
+    }
+  }
+
   return (
     <main className="min-h-screen bg-dark flex items-center justify-center px-4">
       <motion.div
@@ -83,6 +109,21 @@ export default function AuthPage() {
         {/* ─── Choose mode ─── */}
         {mode === 'choose' && !sent && (
           <div className="flex flex-col gap-3">
+            <button
+              type="button"
+              onClick={() => setMode('student')}
+              className="w-full font-body font-semibold text-white rounded-xl py-3 px-4 cursor-pointer border-none"
+              style={{ background: 'linear-gradient(135deg, #FFD700, #FF9500)', fontSize: '15px', color: '#1A1A2E' }}
+            >
+              🎓 Schüler-Login (Username + Passwort)
+            </button>
+
+            <div className="flex items-center gap-2 my-1">
+              <div className="flex-1 h-px bg-white/10" />
+              <span className="text-white/40 text-xs font-body">oder</span>
+              <div className="flex-1 h-px bg-white/10" />
+            </div>
+
             <button
               type="button"
               onClick={handleGoogle}
@@ -108,7 +149,7 @@ export default function AuthPage() {
               className="w-full font-body font-semibold text-white rounded-xl py-3 px-4 cursor-pointer border-none"
               style={{ background: '#1A1A2E', border: '1px solid #0F3460', fontSize: '15px' }}
             >
-              🔐 {t('auth.sign_in_password', 'Passwort-Login')}
+              🔐 Email + Passwort (für Lehrer/Admin)
             </button>
 
             <button
@@ -123,6 +164,52 @@ export default function AuthPage() {
               {t('auth.continue_guest')}
             </button>
           </div>
+        )}
+
+        {/* ─── Student login ─── */}
+        {mode === 'student' && (
+          <form onSubmit={(e) => void handleStudentLogin(e)} className="flex flex-col gap-3">
+            <p className="font-body text-xs text-white/60 mb-1">
+              🎓 Login für Schüler — dein Lehrer hat dir Username + Passwort gegeben.
+            </p>
+            <input
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="Username (z.B. anna-456)"
+              required
+              autoComplete="username"
+              autoFocus
+              className="w-full font-mono text-white rounded-xl px-4 py-3 outline-none"
+              style={{ background: '#1A1A2E', border: '1px solid #0F3460', fontSize: '15px' }}
+            />
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Passwort"
+              required
+              autoComplete="current-password"
+              className="w-full font-mono text-white rounded-xl px-4 py-3 outline-none"
+              style={{ background: '#1A1A2E', border: '1px solid #0F3460', fontSize: '15px' }}
+            />
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full font-body font-bold rounded-xl py-3 px-4 cursor-pointer border-none"
+              style={{ background: 'linear-gradient(135deg, #FFD700, #FF9500)', color: '#1A1A2E', fontSize: '15px', opacity: loading ? 0.7 : 1 }}
+            >
+              {loading ? 'Login…' : '🎮 Einloggen'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('choose')}
+              className="w-full font-body text-sm cursor-pointer border-none bg-transparent"
+              style={{ color: 'rgba(255,255,255,0.4)', fontSize: '14px' }}
+            >
+              {t('auth.back')}
+            </button>
+          </form>
         )}
 
         {/* ─── Magic link ─── */}

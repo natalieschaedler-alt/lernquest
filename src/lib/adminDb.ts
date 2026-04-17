@@ -103,3 +103,66 @@ export async function setRoleByEmail(email: string, role: AdminUserRow['role']):
     return false
   }
 }
+
+// ── Schools ───────────────────────────────────────────────────
+
+export interface SchoolRow {
+  id: string
+  name: string
+  city: string | null
+  country: string | null
+  created_at: string
+  teacher_count: number
+  student_count: number
+}
+
+export async function listSchools(): Promise<SchoolRow[]> {
+  try {
+    const { data, error } = await supabase.rpc('get_schools_with_counts')
+    if (error) throw error
+    return (data ?? []) as SchoolRow[]
+  } catch (err) {
+    console.error('listSchools:', err)
+    return []
+  }
+}
+
+export async function createSchool(name: string, city: string): Promise<SchoolRow | null> {
+  try {
+    const { data, error } = await supabase
+      .from('schools')
+      .insert({ name, city: city || null })
+      .select('*, teacher_count:id, student_count:id')
+      .single()
+    if (error) throw error
+    return { ...data, teacher_count: 0, student_count: 0 } as SchoolRow
+  } catch (err) {
+    console.error('createSchool:', err)
+    return null
+  }
+}
+
+export async function deleteSchool(id: string): Promise<boolean> {
+  try {
+    const { error } = await supabase.from('schools').delete().eq('id', id)
+    if (error) throw error
+    return true
+  } catch (err) {
+    console.error('deleteSchool:', err)
+    return false
+  }
+}
+
+export async function assignTeacherToSchool(email: string, schoolId: string): Promise<boolean> {
+  try {
+    const { data, error } = await supabase.rpc('admin_assign_teacher_to_school', {
+      target_email: email,
+      p_school_id: schoolId,
+    })
+    if (error) throw error
+    return data === true
+  } catch (err) {
+    console.error('assignTeacherToSchool:', err)
+    return false
+  }
+}

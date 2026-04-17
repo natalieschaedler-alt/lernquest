@@ -18,8 +18,13 @@ import {
   approveTeacher,
   rejectTeacher,
   setRoleByEmail,
+  listSchools,
+  createSchool,
+  deleteSchool,
+  assignTeacherToSchool,
   type AdminStats,
   type AdminUserRow,
+  type SchoolRow,
 } from '../lib/adminDb'
 
 type RoleFilter = '' | 'student' | 'teacher_pending' | 'teacher' | 'admin'
@@ -45,11 +50,16 @@ export default function AdminPage() {
 
   const [stats, setStats]       = useState<AdminStats | null>(null)
   const [users, setUsers]       = useState<AdminUserRow[]>([])
+  const [schools, setSchools]   = useState<SchoolRow[]>([])
   const [filter, setFilter]     = useState<RoleFilter>('')
   const [query, setQuery]       = useState('')
   const [loading, setLoading]   = useState(true)
   const [promoteEmail, setPromoteEmail] = useState('')
   const [promoteRole,  setPromoteRole]  = useState<AdminUserRow['role']>('teacher')
+  const [newSchoolName, setNewSchoolName] = useState('')
+  const [newSchoolCity, setNewSchoolCity] = useState('')
+  const [assignEmail, setAssignEmail] = useState('')
+  const [assignSchoolId, setAssignSchoolId] = useState('')
 
   // ── Access gate ─────────────────────────────────────────────
   useEffect(() => {
@@ -68,12 +78,14 @@ export default function AdminPage() {
   const load = useCallback(async () => {
     if (!isAdmin) return
     setLoading(true)
-    const [s, u] = await Promise.all([
+    const [s, u, sc] = await Promise.all([
       getAdminStats(),
       listUsers(filter ? { role: filter } : {}),
+      listSchools(),
     ])
     setStats(s)
     setUsers(u)
+    setSchools(sc)
     setLoading(false)
   }, [isAdmin, filter])
 
@@ -107,6 +119,45 @@ export default function AdminPage() {
     if (ok) {
       toast.success(`${promoteEmail} → ${ROLE_LABEL[promoteRole]}`)
       setPromoteEmail('')
+      void load()
+    } else {
+      toast.error('Fehler (Email nicht gefunden?)')
+    }
+  }
+
+  const handleCreateSchool = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newSchoolName.trim()) return
+    const res = await createSchool(newSchoolName.trim(), newSchoolCity.trim())
+    if (res) {
+      toast.success(`Schule "${res.name}" erstellt`)
+      setNewSchoolName('')
+      setNewSchoolCity('')
+      void load()
+    } else {
+      toast.error('Fehler beim Erstellen')
+    }
+  }
+
+  const handleDeleteSchool = async (id: string, name: string) => {
+    if (!window.confirm(`Schule "${name}" wirklich löschen?`)) return
+    const ok = await deleteSchool(id)
+    if (ok) {
+      toast.success('Schule gelöscht')
+      void load()
+    } else {
+      toast.error('Fehler')
+    }
+  }
+
+  const handleAssignTeacher = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!assignEmail.trim() || !assignSchoolId) return
+    const ok = await assignTeacherToSchool(assignEmail.trim(), assignSchoolId)
+    if (ok) {
+      const schoolName = schools.find((s) => s.id === assignSchoolId)?.name ?? ''
+      toast.success(`${assignEmail} → ${schoolName}`)
+      setAssignEmail('')
       void load()
     } else {
       toast.error('Fehler (Email nicht gefunden?)')
@@ -167,6 +218,107 @@ export default function AdminPage() {
           onApprove={handleApprove}
           onReject={handleReject}
         />
+
+        {/* ── Schulen ── */}
+        <section className="mb-8 bg-dark-card rounded-2xl p-5 border border-dark-border">
+          <h2 className="font-display text-lg mb-3">🏫 Schulen ({schools.length})</h2>
+
+          {/* Create school form */}
+          <form onSubmit={handleCreateSchool} className="flex flex-col md:flex-row gap-2 mb-4">
+            <input
+              type="text"
+              placeholder="Schulname (z.B. Gymnasium Musterstadt)"
+              value={newSchoolName}
+              onChange={(e) => setNewSchoolName(e.target.value)}
+              className="flex-1 font-body text-white rounded-xl px-4 py-2.5 outline-none"
+              style={{ background: '#1A1A2E', border: '1px solid #0F3460', fontSize: '14px' }}
+              required
+            />
+            <input
+              type="text"
+              placeholder="Stadt (optional)"
+              value={newSchoolCity}
+              onChange={(e) => setNewSchoolCity(e.target.value)}
+              className="font-body text-white rounded-xl px-4 py-2.5 outline-none"
+              style={{ background: '#1A1A2E', border: '1px solid #0F3460', fontSize: '14px', width: 160 }}
+            />
+            <button
+              type="submit"
+              className="font-body font-semibold px-5 py-2.5 rounded-xl border-none cursor-pointer text-white"
+              style={{ background: '#00C896' }}
+            >
+              + Erstellen
+            </button>
+          </form>
+
+          {/* Schools list */}
+          {schools.length === 0 ? (
+            <p className="text-white/40 text-center py-4 text-sm">Noch keine Schulen angelegt.</p>
+          ) : (
+            <div className="space-y-2 mb-4">
+              {schools.map((s) => (
+                <div
+                  key={s.id}
+                  className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/5"
+                >
+                  <div>
+                    <p className="font-body font-semibold">{s.name}</p>
+                    <p className="font-body text-xs text-white/50">
+                      {s.city ?? '—'}&nbsp;·&nbsp;
+                      <strong style={{ color: '#00C896' }}>{s.teacher_count}</strong> Lehrer&nbsp;·&nbsp;
+                      <strong style={{ color: '#3B82F6' }}>{s.student_count}</strong> Schüler
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => handleDeleteSchool(s.id, s.name)}
+                    className="font-body text-xs px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 cursor-pointer text-white/70 hover:text-red-400"
+                  >
+                    ✕ Löschen
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Assign teacher to school */}
+          {schools.length > 0 && (
+            <div className="pt-3 border-t border-white/10">
+              <p className="font-body text-xs text-white/60 mb-2 uppercase tracking-wide">
+                Lehrer zu Schule zuordnen
+              </p>
+              <form onSubmit={handleAssignTeacher} className="flex flex-col md:flex-row gap-2">
+                <input
+                  type="email"
+                  placeholder="lehrer@email.de"
+                  value={assignEmail}
+                  onChange={(e) => setAssignEmail(e.target.value)}
+                  className="flex-1 font-body text-white rounded-xl px-4 py-2.5 outline-none"
+                  style={{ background: '#1A1A2E', border: '1px solid #0F3460', fontSize: '14px' }}
+                  required
+                />
+                <select
+                  value={assignSchoolId}
+                  onChange={(e) => setAssignSchoolId(e.target.value)}
+                  className="font-body text-white rounded-xl px-4 py-2.5 outline-none"
+                  style={{ background: '#1A1A2E', border: '1px solid #0F3460', fontSize: '14px' }}
+                  required
+                >
+                  <option value="">Schule wählen</option>
+                  {schools.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+                <button
+                  type="submit"
+                  className="font-body font-semibold px-5 py-2.5 rounded-xl border-none cursor-pointer text-white"
+                  style={{ background: '#6C3CE1' }}
+                >
+                  Zuordnen
+                </button>
+              </form>
+            </div>
+          )}
+        </section>
 
         {/* ── Rollen-Manueller-Setter ── */}
         <section className="mb-8 bg-dark-card rounded-2xl p-5 border border-dark-border">

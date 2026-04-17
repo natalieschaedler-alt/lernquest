@@ -31,6 +31,8 @@ const DashboardPage = lazy(() => import('./pages/DashboardPage'))
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'))
 const TeacherRegisterPage = lazy(() => import('./pages/teacher/TeacherRegisterPage'))
 const TeacherDashboardPage = lazy(() => import('./pages/teacher/TeacherDashboardPage'))
+const AdminPage = lazy(() => import('./pages/AdminPage'))
+const ResetPasswordPage = lazy(() => import('./pages/auth/ResetPasswordPage'))
 
 /** Claims the daily mystery box once per day on app start. */
 function DailyBoxChecker() {
@@ -89,6 +91,8 @@ export default function App() {
           <Route path="/agb" element={<AGBPage />} />
           <Route path="/lehrer/registrieren" element={<TeacherRegisterPage />} />
           <Route path="/lehrer/dashboard" element={<TeacherDashboardPage />} />
+          <Route path="/auth/reset" element={<ResetPasswordPage />} />
+          <Route path="/admin" element={<AdminPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
         <CookieBanner />

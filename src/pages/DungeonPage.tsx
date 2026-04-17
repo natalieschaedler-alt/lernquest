@@ -23,6 +23,7 @@ import SpeedRun from '../components/rooms/SpeedRun'
 import MemoryTrail from '../components/rooms/MemoryTrail'
 import TrueFalseSwipe from '../components/rooms/TrueFalseSwipe'
 import OrakelStatue from '../components/rooms/OrakelStatue'
+import TowerDefense from '../components/minigames/TowerDefense'
 import WorldBackground from '../components/WorldBackground'
 import {
   pointsForDifficulty,
@@ -48,7 +49,7 @@ function getGameForQuestion(q: Question | undefined): GameType | null {
 // Randomly selects 2-3 special rooms per session from all 7 available types,
 // then fills remaining questions individually.
 
-type RoomType = 'runenstein' | 'ketten' | 'schild' | 'lavabridge' | 'runencasting' | 'bossdodge' | 'fragepuzzle' | 'speedrun' | 'memorytrail' | 'truefalsewipe' | 'orakelstatue'
+type RoomType = 'runenstein' | 'ketten' | 'schild' | 'lavabridge' | 'runencasting' | 'bossdodge' | 'fragepuzzle' | 'speedrun' | 'memorytrail' | 'truefalsewipe' | 'orakelstatue' | 'towerdefense'
 
 type QueueItem =
   | { kind: 'room'; type: RoomType; questions: Question[] }
@@ -65,6 +66,7 @@ const MC_ROOM_SPECS: RoomSpec[] = [
   { type: 'bossdodge',    need: 3, src: 'mc' },
   { type: 'speedrun',     need: 3, src: 'mc' },
   { type: 'orakelstatue', need: 3, src: 'mc' },
+  { type: 'towerdefense', need: 6, src: 'mc' },  // new – "Wissens-Wächter"
 ]
 
 const TF_ROOM_SPECS: RoomSpec[] = [
@@ -568,6 +570,13 @@ export default function DungeonPage() {
                 questions={activeItem.questions}
                 worldTheme={worldTheme}
                 onComplete={handleKettenComplete}
+              />
+            ) : activeItem?.kind === 'room' && activeItem.type === 'towerdefense' ? (
+              /* ── Tower Defense minigame – "Wissens-Wächter" ── */
+              <TowerDefense
+                questions={activeItem.questions}
+                worldTheme={worldTheme}
+                onComplete={(r) => handleRoomComplete(r.score)}
               />
             ) : currentQuestion ? (
               /* ── Normal question ── */

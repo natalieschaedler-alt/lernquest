@@ -1,9 +1,10 @@
 /**
- * useTeacher – Reaktiver Hook für Lehrer-Authentifizierung und Rollenstatus.
+ * useTeacher – Reaktiver Hook für Lehrer- & Admin-Rollenstatus.
  *
- * isTeacher:   role === 'teacher'   → Dashboard zeigen
- * isPending:   role === 'teacher_pending' → "Wird geprüft"-Screen
- * isStudent:   role === 'student'   → an /lehrer/registrieren weiterleiten
+ * isTeacher:  role === 'teacher'
+ * isPending:  role === 'teacher_pending'
+ * isAdmin:    role === 'admin'
+ * isStudent:  role === 'student'  (fallback)
  */
 import { useState, useEffect } from 'react'
 import { useAuth } from './useAuth'
@@ -32,7 +33,8 @@ export function useTeacher() {
   const loading    = authLoading || profileLoading
   const isTeacher  = profile?.role === 'teacher'
   const isPending  = profile?.role === 'teacher_pending'
+  const isAdmin    = profile?.role === 'admin'
   const isLoggedIn = !!user
 
-  return { user, profile, loading, isTeacher, isPending, isLoggedIn }
+  return { user, profile, loading, isTeacher, isPending, isAdmin, isLoggedIn }
 }

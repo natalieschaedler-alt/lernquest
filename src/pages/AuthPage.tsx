@@ -123,6 +123,14 @@ export default function AuthPage() {
             >
               {t('auth.back')}
             </button>
+            <button
+              type="button"
+              onClick={() => void navigate('/auth/reset')}
+              className="w-full font-body text-xs cursor-pointer border-none bg-transparent mt-1"
+              style={{ color: 'rgba(255,255,255,0.35)', fontSize: '12px' }}
+            >
+              Passwort vergessen?
+            </button>
           </form>
         )}
 

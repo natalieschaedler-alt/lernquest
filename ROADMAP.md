@@ -143,17 +143,24 @@ Top-Down-Grid-Maze mit Fog-of-War. Welt-Theme-adaptive Wände.
   - AdminPage an `/admin` mit Stats, Lehrer-Approve, Rollen-Setter, User-Liste
   - SQL-Migration 010: Auto-Profile-Trigger, `is_admin()`, RLS, `admin_set_role()`, `get_admin_stats()`
   - Password-Reset via `/auth/reset` (2-stufig)
-  - Email-Verify implicit via Magic Link (kein extra Gate nötig)
-- [x] **Phase 2 – Tower-Defense-Minigame (done)**
-  - `src/components/minigames/TowerDefense.tsx` – 11s enemy walk, 5 Slots, Tower-Cooldown, 3-Sterne-Scoring
-  - Integration in DungeonPage (`type: 'towerdefense'`, need 6 Fragen)
-  - Shared `_MinigameIntro` + `_MinigameResult`
-- [ ] Phase 3 – Engagement-Polish
-- [ ] Phase 4 – Platform-Climber
-- [ ] Phase 5 – Alchemie-Labor
-- [ ] Phase 6 – Labyrinth
-- [ ] Phase 7 – Teacher-Power
-- [ ] Phase 8 – Finish & Polish
+- [x] **Phase 2 – Tower-Defense (done)**
+  - `src/components/minigames/TowerDefense.tsx` – 5 Slots, 11s walk, 3-Sterne
+- [x] **Phase 3 – Engagement-Polish (done)**
+  - `DailyGoalRing` zirkulärer Progress-Ring im Dashboard (mode: dungeons | xp)
+  - 7 neue Achievements hinzugefügt (jetzt 15 total): sessions100, level25, level50, streak14, streak100, streak365, scholar
+  - i18n (de/en) komplett
+- [x] **Phase 4 – Platform-Climber (done)**
+  - `src/components/minigames/PlatformClimber.tsx` – 8 Ebenen, Sprung/Fall, Parallax-Sky
+- [x] **Phase 5 – Alchemie-Labor (done)**
+  - `src/components/minigames/AlchemieLabor.tsx` – Kessel + 4 Zutaten, 5 Rezepte
+- [x] **Phase 6 – Labyrinth (done)**
+  - `src/components/minigames/Labyrinth.tsx` – Top-Down-Maze, 5 Kreuzungen, 90 s Timer
+- [x] **Phase 7 – Teacher CSV-Bulk-Invite (done)**
+  - `BulkInviteModal`: CSV-Upload ODER Paste → druckbare Klassenliste mit Invite-Code
+- [x] **Phase 8 – Polish (done)**
+  - 0 Lint-Errors (29 warnings nur experimentelle R19-Regeln)
+  - Build sauber (60 PWA-precache entries, 2.8 MB)
+  - 190/190 Tests grün
 
 ---
 

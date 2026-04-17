@@ -35,6 +35,7 @@ import type {
   CustomQuestion,
 } from '../../lib/teacherDb'
 import LoadingSpinner from '../../components/ui/LoadingSpinner'
+import BulkInviteModal from '../../components/teacher/BulkInviteModal'
 
 // ── Typen ─────────────────────────────────────────────────────
 
@@ -109,6 +110,7 @@ function ClassesTab({ teacherId, t }: ClassesTabProps) {
   const [classes, setClasses]         = useState<TeacherClass[]>([])
   const [memberCounts, setMemberCounts] = useState<Record<string, number>>({})
   const [expandedId, setExpandedId]   = useState<string | null>(null)
+  const [bulkInviteCls, setBulkInviteCls] = useState<TeacherClass | null>(null)
   const [students, setStudents]       = useState<ClassStudent[]>([])
   const [studentsLoading, setStudentsLoading] = useState(false)
   const [sortBy, setSortBy]           = useState<StudentSort>('activity')
@@ -265,6 +267,13 @@ function ClassesTab({ teacherId, t }: ClassesTabProps) {
                   >
                     📋 {t('teacher.copy_btn')}
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setBulkInviteCls(cls)}
+                    className="font-body text-xs text-purple-400 hover:text-white transition-colors cursor-pointer border-none bg-transparent whitespace-nowrap"
+                  >
+                    📋 Massen-Import
+                  </button>
                 </div>
 
                 <p className="font-body text-xs text-gray-500 mt-2">
@@ -376,6 +385,15 @@ function ClassesTab({ teacherId, t }: ClassesTabProps) {
         <p className="font-body text-xs text-gray-600 text-center mt-4">
           {t('teacher.invite_code_hint')}
         </p>
+      )}
+
+      {/* Bulk invite modal */}
+      {bulkInviteCls && (
+        <BulkInviteModal
+          cls={bulkInviteCls}
+          open={!!bulkInviteCls}
+          onClose={() => setBulkInviteCls(null)}
+        />
       )}
     </div>
   )

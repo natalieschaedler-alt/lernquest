@@ -30,6 +30,7 @@ import LoadingSpinner from '../components/ui/LoadingSpinner'
 import Footer from '../components/ui/Footer'
 import { StreakChip } from '../components/ui/StreakCounter'
 import XpBar from '../components/ui/XpBar'
+import DailyGoalRing from '../components/ui/DailyGoalRing'
 import { useStreak } from '../hooks/useStreak'
 
 // ── Konstanten ─────────────────────────────────────────────────
@@ -364,6 +365,20 @@ export default function DashboardPage() {
       <div className="pb-4">
         <XpBar compact />
       </div>
+
+      {/* ── Tagesziel-Ring ── */}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1 }}
+        className="mb-5 p-4 rounded-2xl"
+        style={{
+          background: 'linear-gradient(135deg, rgba(108,60,225,0.08), rgba(59,130,246,0.04))',
+          border:     '1px solid rgba(108,60,225,0.2)',
+        }}
+      >
+        <DailyGoalRing mode="dungeons" />
+      </motion.div>
 
       {/* ── Begrüßung ── */}
       <motion.div {...sd(0)}>

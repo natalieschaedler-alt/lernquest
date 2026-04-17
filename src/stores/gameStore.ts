@@ -80,6 +80,56 @@ export const ACHIEVEMENT_DEFS: AchievementDef[] = [
     descKey: 'profile.ach_sessions50_desc',
     unlocked: (_l, _s, totalSessions) => totalSessions >= 50,
   },
+  {
+    id: 'sessions100',
+    icon: '🎖️',
+    labelKey: 'profile.ach_sessions100_label',
+    descKey: 'profile.ach_sessions100_desc',
+    unlocked: (_l, _s, totalSessions) => totalSessions >= 100,
+  },
+  {
+    id: 'level25',
+    icon: '💎',
+    labelKey: 'profile.ach_level25_label',
+    descKey: 'profile.ach_level25_desc',
+    unlocked: (level) => level >= 25,
+  },
+  {
+    id: 'level50',
+    icon: '🔱',
+    labelKey: 'profile.ach_level50_label',
+    descKey: 'profile.ach_level50_desc',
+    unlocked: (level) => level >= 50,
+  },
+  {
+    id: 'streak14',
+    icon: '⚡',
+    labelKey: 'profile.ach_streak14_label',
+    descKey: 'profile.ach_streak14_desc',
+    unlocked: (_l, streak) => streak >= 14,
+  },
+  {
+    id: 'streak100',
+    icon: '🏆',
+    labelKey: 'profile.ach_streak100_label',
+    descKey: 'profile.ach_streak100_desc',
+    unlocked: (_l, streak) => streak >= 100,
+  },
+  {
+    id: 'streak365',
+    icon: '🌞',
+    labelKey: 'profile.ach_streak365_label',
+    descKey: 'profile.ach_streak365_desc',
+    unlocked: (_l, streak) => streak >= 365,
+  },
+  {
+    id: 'scholar',
+    icon: '📚',
+    labelKey: 'profile.ach_scholar_label',
+    descKey: 'profile.ach_scholar_desc',
+    // A "scholar" has both depth (level) and dedication (streak)
+    unlocked: (level, streak) => level >= 10 && streak >= 7,
+  },
 ]
 
 // ── Daily challenge ───────────────────────────────────────────────────────────

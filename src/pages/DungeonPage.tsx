@@ -24,6 +24,9 @@ import MemoryTrail from '../components/rooms/MemoryTrail'
 import TrueFalseSwipe from '../components/rooms/TrueFalseSwipe'
 import OrakelStatue from '../components/rooms/OrakelStatue'
 import TowerDefense from '../components/minigames/TowerDefense'
+import PlatformClimber from '../components/minigames/PlatformClimber'
+import AlchemieLabor from '../components/minigames/AlchemieLabor'
+import Labyrinth from '../components/minigames/Labyrinth'
 import WorldBackground from '../components/WorldBackground'
 import {
   pointsForDifficulty,
@@ -49,7 +52,7 @@ function getGameForQuestion(q: Question | undefined): GameType | null {
 // Randomly selects 2-3 special rooms per session from all 7 available types,
 // then fills remaining questions individually.
 
-type RoomType = 'runenstein' | 'ketten' | 'schild' | 'lavabridge' | 'runencasting' | 'bossdodge' | 'fragepuzzle' | 'speedrun' | 'memorytrail' | 'truefalsewipe' | 'orakelstatue' | 'towerdefense'
+type RoomType = 'runenstein' | 'ketten' | 'schild' | 'lavabridge' | 'runencasting' | 'bossdodge' | 'fragepuzzle' | 'speedrun' | 'memorytrail' | 'truefalsewipe' | 'orakelstatue' | 'towerdefense' | 'platformclimber' | 'alchemie' | 'labyrinth'
 
 type QueueItem =
   | { kind: 'room'; type: RoomType; questions: Question[] }
@@ -66,7 +69,10 @@ const MC_ROOM_SPECS: RoomSpec[] = [
   { type: 'bossdodge',    need: 3, src: 'mc' },
   { type: 'speedrun',     need: 3, src: 'mc' },
   { type: 'orakelstatue', need: 3, src: 'mc' },
-  { type: 'towerdefense', need: 6, src: 'mc' },  // new – "Wissens-Wächter"
+  { type: 'towerdefense',    need: 6, src: 'mc' },  // "Wissens-Wächter"
+  { type: 'platformclimber', need: 8, src: 'mc' },  // "Wissens-Turm"
+  { type: 'alchemie',        need: 5, src: 'mc' },  // "Wissens-Kessel"
+  { type: 'labyrinth',       need: 5, src: 'mc' },  // "Wissens-Labyrinth"
 ]
 
 const TF_ROOM_SPECS: RoomSpec[] = [
@@ -572,8 +578,29 @@ export default function DungeonPage() {
                 onComplete={handleKettenComplete}
               />
             ) : activeItem?.kind === 'room' && activeItem.type === 'towerdefense' ? (
-              /* ── Tower Defense minigame – "Wissens-Wächter" ── */
+              /* ── Tower Defense – "Wissens-Wächter" ── */
               <TowerDefense
+                questions={activeItem.questions}
+                worldTheme={worldTheme}
+                onComplete={(r) => handleRoomComplete(r.score)}
+              />
+            ) : activeItem?.kind === 'room' && activeItem.type === 'platformclimber' ? (
+              /* ── Platform Climber – "Wissens-Turm" ── */
+              <PlatformClimber
+                questions={activeItem.questions}
+                worldTheme={worldTheme}
+                onComplete={(r) => handleRoomComplete(r.score)}
+              />
+            ) : activeItem?.kind === 'room' && activeItem.type === 'alchemie' ? (
+              /* ── Alchemie-Labor – "Wissens-Kessel" ── */
+              <AlchemieLabor
+                questions={activeItem.questions}
+                worldTheme={worldTheme}
+                onComplete={(r) => handleRoomComplete(r.score)}
+              />
+            ) : activeItem?.kind === 'room' && activeItem.type === 'labyrinth' ? (
+              /* ── Labyrinth – "Wissens-Labyrinth" ── */
+              <Labyrinth
                 questions={activeItem.questions}
                 worldTheme={worldTheme}
                 onComplete={(r) => handleRoomComplete(r.score)}

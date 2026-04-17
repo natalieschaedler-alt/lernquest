@@ -1,9 +1,10 @@
 -- ============================================================
 -- LearnQuest – Migration 011: Schools
 --
--- Schulen als separate Entity: Admin erstellt Schulen,
--- Lehrer werden einer Schule zugeordnet, Klassen gehören zur Schule
--- (via teacher → school). Schüler sehen über die Klasse indirekt die Schule.
+-- Fix: alter table muss TOP-LEVEL laufen (nicht in do-Block) weil
+-- Supabase SQL Editor die Statements parsed/caches bevor das do block
+-- ausgeführt wird → nachfolgende CREATE VIEW konnte das neue Feld
+-- nicht sehen.
 -- ============================================================
 
 -- ── 1. SCHOOLS TABLE ───────────────────────────────────────
@@ -20,7 +21,14 @@ create index if not exists schools_name_idx on public.schools (name);
 
 alter table public.schools enable row level security;
 
--- Admins: full access
+
+-- ── 2. ADD school_id TO profiles (TOP-LEVEL, idempotent) ──
+-- Postgres >=9.6 supports IF NOT EXISTS on ADD COLUMN. Supabase runs PG14+.
+alter table public.profiles add column if not exists school_id uuid references public.schools(id) on delete set null;
+create index if not exists profiles_school_id_idx on public.profiles (school_id);
+
+
+-- ── 3. RLS POLICIES FOR SCHOOLS ────────────────────────────
 drop policy if exists "admin_all_schools" on public.schools;
 create policy "admin_all_schools"
   on public.schools
@@ -28,7 +36,6 @@ create policy "admin_all_schools"
   using ( public.is_admin(auth.uid()) )
   with check ( public.is_admin(auth.uid()) );
 
--- Teachers: read their own school
 drop policy if exists "teacher_read_own_school" on public.schools;
 create policy "teacher_read_own_school"
   on public.schools
@@ -41,7 +48,6 @@ create policy "teacher_read_own_school"
     )
   );
 
--- Any authenticated user: read list of schools (for signup dropdown)
 drop policy if exists "authenticated_read_schools" on public.schools;
 create policy "authenticated_read_schools"
   on public.schools
@@ -50,23 +56,7 @@ create policy "authenticated_read_schools"
   using ( true );
 
 
--- ── 2. ADD school_id TO profiles ───────────────────────────
-do $$
-begin
-  if not exists (
-    select 1 from information_schema.columns
-    where table_name='profiles' and column_name='school_id'
-  ) then
-    alter table public.profiles
-      add column school_id uuid references public.schools(id) on delete set null;
-  end if;
-end
-$$;
-
-create index if not exists profiles_school_id_idx on public.profiles (school_id);
-
-
--- ── 3. STATS VIEW: enrich schools with teacher- and student-counts ──
+-- ── 4. STATS VIEW ──────────────────────────────────────────
 create or replace view public.schools_with_counts as
   select
     s.id,
@@ -80,7 +70,7 @@ create or replace view public.schools_with_counts as
   order by s.created_at desc;
 
 
--- ── 4. ADMIN-CALLABLE: list schools with stats ─────────────
+-- ── 5. ADMIN-CALLABLE: list schools ────────────────────────
 create or replace function public.get_schools_with_counts()
 returns table (
   id uuid,
@@ -99,7 +89,6 @@ begin
   if not (public.is_current_user_admin() or
           exists (select 1 from public.profiles where id = auth.uid() and role in ('teacher','teacher_pending')))
   then
-    -- Non-admin/non-teacher: only id+name (for public dropdown fallback)
     return query
       select s.id, s.name, s.city, s.country, s.created_at, 0::bigint, 0::bigint
       from public.schools s
@@ -111,7 +100,7 @@ end;
 $$;
 
 
--- ── 5. ADMIN-CALLABLE: assign teacher to school by email ───
+-- ── 6. ADMIN-CALLABLE: assign teacher to school ────────────
 create or replace function public.admin_assign_teacher_to_school(
   target_email text,
   p_school_id uuid

@@ -120,7 +120,16 @@ export async function listSchools(): Promise<SchoolRow[]> {
   try {
     const { data, error } = await supabase.rpc('get_schools_with_counts')
     if (error) throw error
-    return (data ?? []) as SchoolRow[]
+    // RPC returns out_* prefixed columns (see migration 014). Map to clean names.
+    return (data ?? []).map((r: Record<string, unknown>) => ({
+      id:            r.out_id as string,
+      name:          r.out_name as string,
+      city:          (r.out_city ?? null) as string | null,
+      country:       (r.out_country ?? null) as string | null,
+      created_at:    r.out_created_at as string,
+      teacher_count: Number(r.out_teacher_count ?? 0),
+      student_count: Number(r.out_student_count ?? 0),
+    })) as SchoolRow[]
   } catch (err) {
     console.error('listSchools:', err)
     return []
@@ -231,7 +240,12 @@ export async function getTopWorlds(limit = 10): Promise<TopWorld[]> {
   try {
     const { data, error } = await supabase.rpc('get_top_worlds', { p_limit: limit })
     if (error) throw error
-    return (data ?? []) as TopWorld[]
+    return (data ?? []).map((r: Record<string, unknown>) => ({
+      world_id:     r.out_world_id as string,
+      title:        r.out_title as string,
+      sessions:     Number(r.out_sessions ?? 0),
+      unique_users: Number(r.out_unique_users ?? 0),
+    })) as TopWorld[]
   } catch (err) {
     console.error('getTopWorlds:', err)
     return []

@@ -1,0 +1,84 @@
+@import "tailwindcss";
+
+/* ---------- Design tokens ---------- */
+:root {
+  --bg-primary: #0a0a0b;
+  --bg-secondary: #131316;
+  --bg-elevated: #1c1c21;
+  --text-primary: #f5f5f7;
+  --text-secondary: #9a9aa3;
+  --accent-primary: #b14eff;
+  --accent-hot: #ff2d7a;
+  --accent-gold: #d4af37;
+}
+
+/* Tailwind v4 theme extension — exposes tokens as utility classes */
+@theme inline {
+  --color-bg-primary: var(--bg-primary);
+  --color-bg-secondary: var(--bg-secondary);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-accent-primary: var(--accent-primary);
+  --color-accent-hot: var(--accent-hot);
+  --color-accent-gold: var(--accent-gold);
+  --font-sans: var(--font-inter), system-ui, -apple-system, sans-serif;
+}
+
+/* ---------- Base ---------- */
+html,
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-family: var(--font-inter), system-ui, -apple-system, sans-serif;
+}
+
+/* ---------- Utilities ---------- */
+@utility tnum {
+  font-feature-settings: "tnum" 1, "lnum" 1;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+@utility scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@utility glass {
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+@utility text-gradient-brand {
+  background: linear-gradient(
+    90deg,
+    var(--accent-primary) 0%,
+    var(--accent-hot) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@utility ring-verified {
+  box-shadow:
+    0 0 0 2px var(--bg-primary),
+    0 0 0 4px var(--accent-primary);
+}
+
+/* Premium gold gradient for badges */
+@utility bg-gold-gradient {
+  background: linear-gradient(135deg, #f7d976 0%, #d4af37 50%, #a07c1a 100%);
+}
